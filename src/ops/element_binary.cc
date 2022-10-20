@@ -323,11 +323,12 @@ void ElementBinary::pipeinit(FFModel const &ff) {
     assert(in_pipepart[0][0] == in_pipepart[1][0]);
   }
   if (!inplace_a) {
-    launcher.add_region_requirement(RegionRequirement(outputs[0]->out_pipepart[init_output_idx],
-                                                      0 /*projection id*/,
-                                                      WRITE_ONLY,
-                                                      EXCLUSIVE,
-                                                      outputs[0]->region));
+    launcher.add_region_requirement(
+        RegionRequirement(outputs[0]->out_pipepart[init_output_idx],
+                          0 /*projection id*/,
+                          WRITE_ONLY,
+                          EXCLUSIVE,
+                          outputs[0]->region));
     launcher.add_field(rid++, FID_DATA);
   } else {
     // assert(outputs[0]->part == inputs[0]->part);

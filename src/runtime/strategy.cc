@@ -127,12 +127,11 @@ bool load_partition_from_file(std::string const &filename,
     input >> in;
     stages[i].device_num = in;
     printf("stage[%d]: ubatchSize(%d), bufSize(%d), nFnB(%d), device_num(%d)\n",
-         i,
-         stages[i].ubatchSize,
-         stages[i].bufSize,
-         stages[i].nFnB,
-         stages[i].device_num);
-
+           i,
+           stages[i].ubatchSize,
+           stages[i].bufSize,
+           stages[i].nFnB,
+           stages[i].device_num);
   }
   input.close();
   return true;

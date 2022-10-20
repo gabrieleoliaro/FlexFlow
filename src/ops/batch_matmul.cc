@@ -201,7 +201,31 @@ Op *BatchMatmul::materialize(FFModel &ff,
   return new BatchMatmul(ff, params, {inputs[0], inputs[1]}, this->name);
 }
 
+void BatchMatmul::reset_idx(FFModel const &ff) {
+  for (int i = 0; i < numInputs; i++) {
+    fwd_input_idx[i] = 0;
+    bwd_input_idx[i] = 0;
+  }
+  fwd_output_idx = 0;
+  bwd_output_idx = 0;
+}
+
 void BatchMatmul::init(FFModel const &ff) {
+  int dim = outputs[0]->num_dims;
+  switch (dim) {
+#define DIMFUNC(DIM)                                                           \
+  case DIM: {                                                                  \
+    init_with_dim<DIM>(ff);                                                    \
+    break;                                                                     \
+  }
+    LEGION_FOREACH_N(DIMFUNC)
+#undef DIMFUNC
+    default:
+      assert(false);
+  }
+}
+
+void BatchMatmul::pipeinit(FFModel const &ff) {
   int dim = outputs[0]->num_dims;
   switch (dim) {
 #define DIMFUNC(DIM)                                                           \
@@ -218,7 +242,7 @@ void BatchMatmul::init(FFModel const &ff) {
 
 template <int NDIM>
 void BatchMatmul::init_with_dim(FFModel const &ff) {
-  assert(check_output_input_weight_same_parallel_is());
+  // assert(check_output_input_weight_same_parallel_is());
   parallel_is = outputs[0]->parallel_is;
   ArgumentMap argmap;
   Context ctx = ff.config.lg_ctx;
@@ -232,20 +256,21 @@ void BatchMatmul::init_with_dim(FFModel const &ff) {
                          false /*must*/,
                          0 /*mapper_id*/,
                          outputs[0]->machine_view.hash());
-  launcher.add_region_requirement(RegionRequirement(outputs[0]->part,
+  launcher.add_region_requirement(RegionRequirement(outputs[0]->out_pipepart[init_output_idx],
                                                     0 /*projection id*/,
                                                     WRITE_ONLY,
                                                     EXCLUSIVE,
                                                     outputs[0]->region));
   launcher.add_field(0, FID_DATA);
   for (int i = 0; i < numInputs; i++) {
-    launcher.add_region_requirement(RegionRequirement(inputs[i]->part,
+    launcher.add_region_requirement(RegionRequirement(in_pipepart[i][0],
                                                       0 /*projection id*/,
                                                       READ_ONLY,
                                                       EXCLUSIVE,
                                                       inputs[i]->region));
     launcher.add_field(i + 1, FID_DATA);
   }
+  init_output_idx = (init_output_idx + 1) % outputs[0]->pipe_num_part_out;
   FutureMap fm = runtime->execute_index_space(ctx, launcher);
   fm.wait_all_results();
   set_opmeta_from_futuremap(ff, fm);
@@ -279,6 +304,21 @@ void BatchMatmul::forward(FFModel const &ff) {
   }
 }
 
+void BatchMatmul::pipeforward(FFModel const &ff) {
+  int dim = outputs[0]->num_dims;
+  switch (dim) {
+#define DIMFUNC(DIM)                                                           \
+  case DIM: {                                                                  \
+    forward_with_dim<DIM>(ff);                                                 \
+    break;                                                                     \
+  }
+    LEGION_FOREACH_N(DIMFUNC)
+#undef DIMFUNC
+    default:
+      assert(false);
+  }
+}
+
 template <int NDIM>
 void BatchMatmul::forward_with_dim(FFModel const &ff) {
   ArgumentMap argmap;
@@ -294,20 +334,23 @@ void BatchMatmul::forward_with_dim(FFModel const &ff) {
       false /*must*/,
       0 /*mapper_id*/,
       outputs[0]->machine_view.hash());
-  launcher.add_region_requirement(RegionRequirement(outputs[0]->part,
+  launcher.add_region_requirement(RegionRequirement(outputs[0]->out_pipepart[fwd_output_idx],
                                                     0 /*projection id*/,
                                                     WRITE_ONLY,
                                                     EXCLUSIVE,
                                                     outputs[0]->region));
   launcher.add_field(0, FID_DATA);
   for (int i = 0; i < numInputs; i++) {
-    launcher.add_region_requirement(RegionRequirement(inputs[i]->part,
+    launcher.add_region_requirement(RegionRequirement(in_pipepart[i][fwd_input_idx[i]],
                                                       0 /*projection id*/,
                                                       READ_ONLY,
                                                       EXCLUSIVE,
                                                       inputs[i]->region));
+    fwd_input_idx[i] =
+        (fwd_input_idx[i] + 1) % (inputs[i]->pipe_buf_size / ubSize);                                                 
     launcher.add_field(i + 1, FID_DATA);
   }
+  fwd_output_idx = (fwd_output_idx + 1) % outputs[0]->pipe_num_part_out;
   runtime->execute_index_space(ctx, launcher);
 }
 
@@ -392,6 +435,21 @@ void BatchMatmul::backward(FFModel const &ff) {
   }
 }
 
+void BatchMatmul::pipebackward(FFModel const &ff) {
+  int dim = outputs[0]->num_dims;
+  switch (dim) {
+#define DIMFUNC(DIM)                                                           \
+  case DIM: {                                                                  \
+    backward_with_dim<DIM>(ff);                                                \
+    break;                                                                     \
+  }
+    LEGION_FOREACH_N(DIMFUNC)
+#undef DIMFUNC
+    default:
+      assert(false);
+  }
+}
+
 /*
   regions[0](I): output
   regions[1](I): output_grad
@@ -417,47 +475,52 @@ void BatchMatmul::backward_with_dim(FFModel const &ff) {
       0 /*mapper_id*/,
       outputs[0]->machine_view.hash());
   // regions[0](I): output
-  launcher.add_region_requirement(RegionRequirement(outputs[0]->part,
+  launcher.add_region_requirement(RegionRequirement(outputs[0]->out_pipepart[bwd_output_idx],
                                                     0 /*projection id*/,
                                                     READ_ONLY,
                                                     EXCLUSIVE,
                                                     outputs[0]->region));
   launcher.add_field(0, FID_DATA);
   // regions[1](I): output_grad
-  launcher.add_region_requirement(RegionRequirement(outputs[0]->part_grad,
+  launcher.add_region_requirement(RegionRequirement(outputs[0]->out_pipepart_grad[bwd_output_idx],
                                                     0 /*projection id*/,
                                                     READ_ONLY,
                                                     EXCLUSIVE,
                                                     outputs[0]->region_grad));
   launcher.add_field(1, FID_DATA);
   // regions[2](I): A
-  launcher.add_region_requirement(RegionRequirement(inputs[0]->part,
+  launcher.add_region_requirement(RegionRequirement(in_pipepart[0][bwd_input_idx[0]],
                                                     0 /*projection id*/,
                                                     READ_ONLY,
                                                     EXCLUSIVE,
                                                     inputs[0]->region));
   launcher.add_field(2, FID_DATA);
   // regions[3](I/O): A_grad
-  launcher.add_region_requirement(RegionRequirement(inputs[0]->part_grad,
+  launcher.add_region_requirement(RegionRequirement(in_pipepart_grad[0][bwd_input_idx[0]],
                                                     0 /*projection id*/,
                                                     READ_WRITE,
                                                     EXCLUSIVE,
                                                     inputs[0]->region_grad));
   launcher.add_field(3, FID_DATA);
   // regions[4](I): B
-  launcher.add_region_requirement(RegionRequirement(inputs[1]->part,
+  launcher.add_region_requirement(RegionRequirement(in_pipepart[1][bwd_input_idx[1]],
                                                     0 /*projection id*/,
                                                     READ_ONLY,
                                                     EXCLUSIVE,
                                                     inputs[1]->region));
   launcher.add_field(4, FID_DATA);
   // regions[5](I/O): B_grad
-  launcher.add_region_requirement(RegionRequirement(inputs[1]->part_grad,
+  launcher.add_region_requirement(RegionRequirement(in_pipepart_grad[1][bwd_input_idx[1]],
                                                     0 /*projection id*/,
                                                     READ_WRITE,
                                                     EXCLUSIVE,
                                                     inputs[1]->region_grad));
   launcher.add_field(5, FID_DATA);
+  bwd_input_idx[0] =
+        (bwd_input_idx[0] + 1) % (inputs[0]->pipe_buf_size / ubSize);
+  bwd_input_idx[1] =
+        (bwd_input_idx[1] + 1) % (inputs[1]->pipe_buf_size / ubSize);
+  bwd_output_idx = (bwd_output_idx + 1) % outputs[0]->pipe_num_part_out;
   runtime->execute_index_space(ctx, launcher);
 }
 

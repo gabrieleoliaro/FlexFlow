@@ -3226,28 +3226,48 @@ bool FFModel::convert_graph_to_operators(
              new_op->device_num,
              new_op->outputs[i]->dims[ndims - 2].degree,
              sinfo.sid);
+      assert(new_op->outputs[i]->dims[ndims - 2].degree == sinfo.device_num);
     }
     for (int i = 0; i < new_op->numInputs; i++) {
       int ndims = new_op->inputs[i]->num_dims;
-      assert(new_op->inputs[i]->dims[ndims - 2].degree == sinfo.device_num);
-      for (int j = 0; j < ndims; j++) {
-        new_op->input_dims[i][j] = new_op->inputs[i]->dims[j];
-      }
-      assert(new_op->input_dims[i][ndims - 2].degree == sinfo.device_num);
-      // change back degree for inputs
-      assert(new_op->inputs[i]->owner_op != NULL);
-      new_op->inputs[i]->dims[ndims - 2].degree =
-          new_op->inputs[i]->owner_op->device_num;
-      // change back parallel ids
-      int next_parallel_idx = 0;
-      for (int k = 0; k < ndims; k++) {
-        if (new_op->inputs[i]->dims[k].degree == 1) {
-          new_op->inputs[i]->dims[k].parallel_idx = -1;
-        } else {
-          new_op->inputs[i]->dims[k].parallel_idx = next_parallel_idx;
-          next_parallel_idx++;
+      
+      bool found = false;
+      for (int j = 0; j < i; j++) {
+        // already changed back
+        if (new_op->inputs[i] == new_op->inputs[j]){
+          found = true;
+          for (int k = 0; k < ndims; k++) {
+            new_op->input_dims[i][k] = new_op->input_dims[j][k];
+          }
+          break;
         }
       }
+
+      if (found) {
+        assert(new_op->inputs[i]->dims[ndims - 2].degree == new_op->inputs[i]->owner_op->device_num);
+      } else {
+        assert(new_op->inputs[i]->dims[ndims - 2].degree == sinfo.device_num);
+        for (int j = 0; j < ndims; j++) {
+          new_op->input_dims[i][j] = new_op->inputs[i]->dims[j];
+        }
+        assert(new_op->input_dims[i][ndims - 2].degree == sinfo.device_num);
+        // change back degree for inputs
+        assert(new_op->inputs[i]->owner_op != NULL);
+        new_op->inputs[i]->dims[ndims - 2].degree =
+            new_op->inputs[i]->owner_op->device_num;
+        // change back parallel ids
+        int next_parallel_idx = 0;
+        for (int k = 0; k < ndims; k++) {
+          if (new_op->inputs[i]->dims[k].degree == 1) {
+            new_op->inputs[i]->dims[k].parallel_idx = -1;
+          } else {
+            new_op->inputs[i]->dims[k].parallel_idx = next_parallel_idx;
+            next_parallel_idx++;
+          }
+        }
+      }
+
+      
     }
 
     node_to_op[node] = new_op;

@@ -26,6 +26,7 @@
 #include "flexflow/ops/flat.h"
 #include "flexflow/ops/fused.h"
 #include "flexflow/ops/linear.h"
+#include "flexflow/ops/attention.h"
 #include "flexflow/ops/pool_2d.h"
 #include "flexflow/ops/reshape.h"
 #include "flexflow/ops/transpose.h"
@@ -243,6 +244,16 @@ __host__ void FusedOp::forward_task(Task const *task,
                                        in_dim,
                                        out_dim,
                                        batch_size);
+        break;
+      }
+      case OP_MULTIHEAD_ATTENTION: {
+        MultiHeadAttentionMeta *m = (MultiHeadAttentionMeta *)metas->meta[op];
+        MultiHeadAttention::forward_kernel_wrapper(m,
+                                             my_input_accessor[0].get_float_ptr(),
+                                             my_input_accessor[1].get_float_ptr(),
+                                             my_input_accessor[2].get_float_ptr(),
+                                             my_weight_accessor[0].get_float_ptr(),
+                                             my_output_accessor[0].get_float_ptr());
         break;
       }
       case OP_BATCHMATMUL: {
@@ -829,6 +840,20 @@ __host__ void FusedOp::backward_task(Task const *task,
             in_dim,
             out_dim,
             batch_size);
+        break;
+      }
+      case OP_MULTIHEAD_ATTENTION: {
+        MultiHeadAttentionMeta *m = (MultiHeadAttentionMeta *)metas->meta[op];
+        MultiHeadAttention::backward_kernel_wrapper(m,
+                                              my_input_accessor[0].get_float_ptr(),
+                                              my_input_grad_accessor[0].get_float_ptr(),
+                                              my_input_accessor[1].get_float_ptr(),
+                                              my_input_grad_accessor[1].get_float_ptr(),
+                                              my_input_accessor[2].get_float_ptr(),
+                                              my_input_grad_accessor[2].get_float_ptr(),
+                                              my_weight_accessor[0].get_float_ptr(),
+                                              my_weight_grad_accessor[0].get_float_ptr(),
+                                              my_output_grad_accessor[0].get_float_ptr());
         break;
       }
       case OP_RELU:

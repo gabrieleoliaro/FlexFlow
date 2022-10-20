@@ -128,6 +128,13 @@ Reshape::Reshape(FFModel &model,
                  char const *name)
     : Reshape(model, input, params.shape, name) {}
 
+void Reshape::reset_idx(FFModel const &ff) {
+  fwd_input_idx[0] = 0;
+  fwd_output_idx = 0;
+  bwd_input_idx[0] = 0;
+  bwd_output_idx = 0;
+}
+
 void Reshape::init(FFModel const &ff) {
   assert(check_output_input_weight_same_parallel_is());
   parallel_is = outputs[0]->parallel_is;
@@ -155,6 +162,39 @@ void Reshape::init(FFModel const &ff) {
                                                     EXCLUSIVE,
                                                     outputs[0]->region));
   launcher.add_field(1, FID_DATA);
+  FutureMap fm = runtime->execute_index_space(ctx, launcher);
+  fm.wait_all_results();
+  set_opmeta_from_futuremap(ff, fm);
+}
+
+void Reshape::pipeinit(FFModel const &ff) {
+  // assert(check_output_input_weight_same_parallel_is());
+  parallel_is = outputs[0]->parallel_is;
+  ArgumentMap argmap;
+  Context ctx = ff.config.lg_ctx;
+  Runtime *runtime = ff.config.lg_hlr;
+  set_argumentmap_for_init(ff, argmap);
+  IndexLauncher launcher(RESHAPE_INIT_TASK_ID,
+                         parallel_is,
+                         TaskArgument(this, sizeof(Reshape)),
+                         argmap,
+                         Predicate::TRUE_PRED,
+                         false /*must*/,
+                         0 /*mapper_id*/,
+                         outputs[0]->machine_view.hash());
+  launcher.add_region_requirement(RegionRequirement(in_pipepart[0][0],
+                                                    0 /*projection id*/,
+                                                    READ_ONLY,
+                                                    EXCLUSIVE,
+                                                    inputs[0]->region));
+  launcher.add_field(0, FID_DATA);
+  launcher.add_region_requirement(RegionRequirement(outputs[0]->out_pipepart[init_output_idx],
+                                                    0 /*projection id*/,
+                                                    WRITE_ONLY,
+                                                    EXCLUSIVE,
+                                                    outputs[0]->region));
+  launcher.add_field(1, FID_DATA);
+  init_output_idx = (init_output_idx + 1) % outputs[0]->pipe_num_part_out;
   FutureMap fm = runtime->execute_index_space(ctx, launcher);
   fm.wait_all_results();
   set_opmeta_from_futuremap(ff, fm);
@@ -196,6 +236,37 @@ void Reshape::forward(FFModel const &ff) {
                                                     EXCLUSIVE,
                                                     outputs[0]->region));
   launcher.add_field(1, FID_DATA);
+  runtime->execute_index_space(ctx, launcher);
+}
+
+void Reshape::pipeforward(FFModel const &ff) {
+  ArgumentMap argmap;
+  Context ctx = ff.config.lg_ctx;
+  Runtime *runtime = ff.config.lg_hlr;
+  set_argumentmap_for_forward(ff, argmap);
+  IndexLauncher launcher(RESHAPE_FWD_TASK_ID,
+                         parallel_is,
+                         TaskArgument(NULL, 0),
+                         argmap,
+                         Predicate::TRUE_PRED,
+                         false /*must*/,
+                         0 /*mapper_id*/,
+                         outputs[0]->machine_view.hash());
+  launcher.add_region_requirement(RegionRequirement(in_pipepart[0][fwd_input_idx[0]],
+                                                    0 /*projection id*/,
+                                                    READ_ONLY,
+                                                    EXCLUSIVE,
+                                                    inputs[0]->region));
+  launcher.add_field(0, FID_DATA);
+  launcher.add_region_requirement(RegionRequirement(outputs[0]->out_pipepart[fwd_output_idx],
+                                                    0 /*projection id*/,
+                                                    WRITE_ONLY,
+                                                    EXCLUSIVE,
+                                                    outputs[0]->region));
+  launcher.add_field(1, FID_DATA);
+  fwd_input_idx[0] =
+      (fwd_input_idx[0] + 1) % (inputs[0]->pipe_buf_size / ubSize);
+  fwd_output_idx = (fwd_output_idx + 1) % outputs[0]->pipe_num_part_out;
   runtime->execute_index_space(ctx, launcher);
 }
 
@@ -273,6 +344,39 @@ void Reshape::backward(FFModel const &ff) {
                                                     EXCLUSIVE,
                                                     inputs[0]->region_grad));
   launcher.add_field(1, FID_DATA);
+  runtime->execute_index_space(ctx, launcher);
+}
+
+void Reshape::pipebackward(FFModel const &ff) {
+  ArgumentMap argmap;
+  Context ctx = ff.config.lg_ctx;
+  Runtime *runtime = ff.config.lg_hlr;
+  set_argumentmap_for_backward(ff, argmap);
+  IndexLauncher launcher(RESHAPE_BWD_TASK_ID,
+                         parallel_is,
+                         TaskArgument(NULL, 0),
+                         argmap,
+                         Predicate::TRUE_PRED,
+                         false /*must*/,
+                         0 /*mapper_id*/,
+                         outputs[0]->machine_view.hash());
+  // regions[0](I): output_grad
+  launcher.add_region_requirement(RegionRequirement(outputs[0]->out_pipepart_grad[bwd_output_idx],
+                                                    0 /*projection id*/,
+                                                    READ_ONLY,
+                                                    EXCLUSIVE,
+                                                    outputs[0]->region_grad));
+  launcher.add_field(0, FID_DATA);
+  // regions[3](I/O): input0_grad
+  launcher.add_region_requirement(RegionRequirement(in_pipepart_grad[0][bwd_input_idx[0]],
+                                                    0 /*projection id*/,
+                                                    READ_WRITE,
+                                                    EXCLUSIVE,
+                                                    inputs[0]->region_grad));
+  launcher.add_field(1, FID_DATA);
+  bwd_input_idx[0] =
+        (bwd_input_idx[0] + 1) % (inputs[0]->pipe_buf_size / ubSize);
+  bwd_output_idx = (bwd_output_idx + 1) % outputs[0]->pipe_num_part_out;
   runtime->execute_index_space(ctx, launcher);
 }
 

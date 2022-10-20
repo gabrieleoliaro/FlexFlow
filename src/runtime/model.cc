@@ -1569,10 +1569,11 @@ void FFModel::map_tensor_with_dim2(ParallelTensor tensor,
   // Step 0: check we are the owner or the owner is NULL
   // in which case set the owner to us
   if (parallel_op != NULL) {
-    log_model.print("DEBUG: map_tensor(%d,%d,%d) for op(%s, %zu)",
+    log_model.print("DEBUG: map_tensor(%d,%d,%d,%d) for op(%s, %zu)",
                     tensor->num_dims,
                     tensor->dims[0].size,
                     tensor->dims[NDIM - 2].size,
+                    tensor->dims[NDIM - 2].degree,
                     optype_to_string(parallel_op->op_type).data(),
                     parallel_op->op_guid);
   } else {
@@ -3131,6 +3132,9 @@ void FFModel::compile(LossType loss_type,
       // scale sample dim
       int ndims = op->outputs[i]->num_dims;
       op->outputs[i]->dims[ndims - 2].size *= op->outputs[i]->pipe_buf_size;
+      if (op->op_type != OP_WEIGHT) {
+        assert(op->outputs[i]->dims[ndims - 2].degree == op->device_num);
+      }
       map_tensor(op->outputs[i], op);
     }
     for (int i = 0; i < op->numInputs; i++) {

@@ -171,7 +171,7 @@ void Flat::init(FFModel const &ff) {
 }
 
 void Flat::pipeinit(FFModel const &ff) {
-  assert(check_output_input_weight_same_parallel_is());
+  // assert(check_output_input_weight_same_parallel_is());
   parallel_is = outputs[0]->parallel_is;
   ArgumentMap argmap;
   Context ctx = ff.config.lg_ctx;

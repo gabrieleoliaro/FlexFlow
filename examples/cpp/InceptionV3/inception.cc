@@ -180,7 +180,7 @@ void FlexFlow::top_level_task(Task const *task,
   ff.compile(optimizer, LOSS_SPARSE_CATEGORICAL_CROSSENTROPY, metrics);
 
   // Data Loader
-  DataLoader data_loader(ff, inceptionConfig, input, ff.label_tensor);
+  /* DataLoader data_loader(ff, inceptionConfig, input, ff.label_tensor); */
   ff.init_operators();
   // Start timer
   {
@@ -192,7 +192,6 @@ void FlexFlow::top_level_task(Task const *task,
   double ts_start = Realm::Clock::current_time_in_microseconds();
   for (int epoch = 0; epoch < ffConfig.epochs; epoch++) {
     /* data_loader.reset(); */
-    data_loader.reset();
     ff.reset_metrics();
     /* int iterations = data_loader.num_samples / ffConfig.batchSize; */
     int iterations = 128;

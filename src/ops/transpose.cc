@@ -181,11 +181,12 @@ void Transpose::pipeinit(FFModel const &ff) {
                                                     EXCLUSIVE,
                                                     inputs[0]->region));
   launcher.add_field(0, FID_DATA);
-  launcher.add_region_requirement(RegionRequirement(outputs[0]->out_pipepart[init_output_idx],
-                                                    0 /*projection id*/,
-                                                    WRITE_ONLY,
-                                                    EXCLUSIVE,
-                                                    outputs[0]->region));
+  launcher.add_region_requirement(
+      RegionRequirement(outputs[0]->out_pipepart[init_output_idx],
+                        0 /*projection id*/,
+                        WRITE_ONLY,
+                        EXCLUSIVE,
+                        outputs[0]->region));
   launcher.add_field(1, FID_DATA);
   init_output_idx = (init_output_idx + 1) % outputs[0]->pipe_num_part_out;
   FutureMap fm = runtime->execute_index_space(ctx, launcher);
@@ -265,20 +266,22 @@ void Transpose::pipeforward(FFModel const &ff) {
                          false /*must*/,
                          0 /*mapper_id*/,
                          outputs[0]->machine_view.hash());
-  launcher.add_region_requirement(RegionRequirement(in_pipepart[0][fwd_input_idx[0]],
-                                                    0 /*projection id*/,
-                                                    READ_ONLY,
-                                                    EXCLUSIVE,
-                                                    inputs[0]->region));
+  launcher.add_region_requirement(
+      RegionRequirement(in_pipepart[0][fwd_input_idx[0]],
+                        0 /*projection id*/,
+                        READ_ONLY,
+                        EXCLUSIVE,
+                        inputs[0]->region));
   launcher.add_field(0, FID_DATA);
-  launcher.add_region_requirement(RegionRequirement(outputs[0]->out_pipepart[fwd_output_idx],
-                                                    0 /*projection id*/,
-                                                    WRITE_ONLY,
-                                                    EXCLUSIVE,
-                                                    outputs[0]->region));
+  launcher.add_region_requirement(
+      RegionRequirement(outputs[0]->out_pipepart[fwd_output_idx],
+                        0 /*projection id*/,
+                        WRITE_ONLY,
+                        EXCLUSIVE,
+                        outputs[0]->region));
   launcher.add_field(1, FID_DATA);
   fwd_input_idx[0] =
-        (fwd_input_idx[0] + 1) % (inputs[0]->pipe_buf_size / ubSize);
+      (fwd_input_idx[0] + 1) % (inputs[0]->pipe_buf_size / ubSize);
   fwd_output_idx = (fwd_output_idx + 1) % outputs[0]->pipe_num_part_out;
   runtime->execute_index_space(ctx, launcher);
 }
@@ -351,21 +354,23 @@ void Transpose::pipebackward(FFModel const &ff) {
                          0 /*mapper_id*/,
                          outputs[0]->machine_view.hash());
   // regions[0](I): output_grad
-  launcher.add_region_requirement(RegionRequirement(outputs[0]->out_pipepart_grad[bwd_output_idx],
-                                                    0 /*projection id*/,
-                                                    READ_ONLY,
-                                                    EXCLUSIVE,
-                                                    outputs[0]->region_grad));
+  launcher.add_region_requirement(
+      RegionRequirement(outputs[0]->out_pipepart_grad[bwd_output_idx],
+                        0 /*projection id*/,
+                        READ_ONLY,
+                        EXCLUSIVE,
+                        outputs[0]->region_grad));
   launcher.add_field(0, FID_DATA);
   // regions[1](I/O): input_grad
-  launcher.add_region_requirement(RegionRequirement(in_pipepart_grad[0][bwd_input_idx[0]],
-                                                    0 /*projection id*/,
-                                                    READ_WRITE,
-                                                    EXCLUSIVE,
-                                                    inputs[0]->region_grad));
+  launcher.add_region_requirement(
+      RegionRequirement(in_pipepart_grad[0][bwd_input_idx[0]],
+                        0 /*projection id*/,
+                        READ_WRITE,
+                        EXCLUSIVE,
+                        inputs[0]->region_grad));
   launcher.add_field(1, FID_DATA);
   bwd_input_idx[0] =
-        (bwd_input_idx[0] + 1) % (inputs[0]->pipe_buf_size / ubSize);
+      (bwd_input_idx[0] + 1) % (inputs[0]->pipe_buf_size / ubSize);
   bwd_output_idx = (bwd_output_idx + 1) % outputs[0]->pipe_num_part_out;
   runtime->execute_index_space(ctx, launcher);
 }

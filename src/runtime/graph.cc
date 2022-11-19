@@ -1715,7 +1715,7 @@ GraphOptimalViewSerialized
       view.stride[0] = 1;
       view.start_device_id = start_device;
       data_parallel_view.push_back(view);
-      start_device +=  model->config.stages[i].device_num;
+      start_device += model->config.stages[i].device_num;
 
       StageInfo info;
       info.sid = i;
@@ -1756,9 +1756,11 @@ GraphOptimalViewSerialized
         assert(op_to_node_map.find(srcOp) != op_to_node_map.end());
         Node srcNode = op_to_node_map[srcOp];
 
-        // shicao for sequential pipeline: check if all adjacent stages have dependency
-        if (srcOp->op_type != OP_INPUT && optimal_partition[srcNode].sid + 1 ==
-            sinfo[model->config.partition[num - 1]].sid) {
+        // shicao for sequential pipeline: check if all adjacent stages have
+        // dependency
+        if (srcOp->op_type != OP_INPUT &&
+            optimal_partition[srcNode].sid + 1 ==
+                sinfo[model->config.partition[num - 1]].sid) {
           stage_dep[optimal_partition[srcNode].sid] = true;
         } else if (srcOp->op_type != OP_INPUT &&
                    optimal_partition[srcNode].sid !=
@@ -1767,9 +1769,9 @@ GraphOptimalViewSerialized
         }
 
         graph->add_edge(srcNode, dstNode, dstOp->inputs[j]->owner_idx, j);
-      }   
+      }
     }
-    
+
     // shicao for sequential pipeline: add dummy op to each stage
     if (model->config.sequential_pipeline) {
       for (int i = 0; i < num_stages - 1; i++) {
@@ -1786,7 +1788,7 @@ GraphOptimalViewSerialized
           optimal_views[dummy_node] = data_parallel_view[i + 1];
           optimal_partition[dummy_node] = sinfo[i + 1];
           printf("adding dummy_node for stage%d\n", i);
-        }   
+        }
       }
     }
     graph->print_dot();

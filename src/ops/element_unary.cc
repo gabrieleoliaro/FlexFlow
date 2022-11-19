@@ -280,11 +280,12 @@ void ElementUnary::pipeinit(FFModel const &ff) {
                                                            EXCLUSIVE,
                                                            inputs[0]->region));
     init_launcher.add_field(0, FID_DATA);
-    init_launcher.add_region_requirement(RegionRequirement(outputs[0]->out_pipepart[init_output_idx],
-                                                           0 /*projection id*/,
-                                                           WRITE_ONLY,
-                                                           EXCLUSIVE,
-                                                           outputs[0]->region));
+    init_launcher.add_region_requirement(
+        RegionRequirement(outputs[0]->out_pipepart[init_output_idx],
+                          0 /*projection id*/,
+                          WRITE_ONLY,
+                          EXCLUSIVE,
+                          outputs[0]->region));
     init_launcher.add_field(1, FID_DATA);
   } else {
     init_launcher.add_region_requirement(RegionRequirement(in_pipepart[0][0],

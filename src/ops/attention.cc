@@ -223,7 +223,7 @@ MultiHeadAttention::MultiHeadAttention(FFModel &model,
                                                  NULL /*owner_op*/,
                                                  true /*create_grad*/,
                                                  initializer,
-                                                 comm_type);                                             
+                                                 comm_type);
   }
 
   outputs[0] = model.create_parallel_tensor_legion_ordering(
@@ -464,11 +464,12 @@ void MultiHeadAttention::pipeinit(FFModel const &ff) {
                                                     EXCLUSIVE,
                                                     weights[0]->region));
   launcher.add_field(3, FID_DATA);
-  launcher.add_region_requirement(RegionRequirement(outputs[0]->out_pipepart[init_output_idx],
-                                                    0 /*projection id*/,
-                                                    WRITE_ONLY,
-                                                    EXCLUSIVE,
-                                                    outputs[0]->region));
+  launcher.add_region_requirement(
+      RegionRequirement(outputs[0]->out_pipepart[init_output_idx],
+                        0 /*projection id*/,
+                        WRITE_ONLY,
+                        EXCLUSIVE,
+                        outputs[0]->region));
   launcher.add_field(4, FID_DATA);
   init_output_idx = (init_output_idx + 1) % outputs[0]->pipe_num_part_out;
   FutureMap fm = runtime->execute_index_space(ctx, launcher);
@@ -590,23 +591,26 @@ void MultiHeadAttention::pipeforward(FFModel const &ff) {
                          false /*must*/,
                          0 /*mapper_id*/,
                          outputs[0]->machine_view.hash());
-  launcher.add_region_requirement(RegionRequirement(in_pipepart[0][fwd_input_idx[0]],
-                                                    0 /*projection id*/,
-                                                    READ_ONLY,
-                                                    EXCLUSIVE,
-                                                    inputs[0]->region));
+  launcher.add_region_requirement(
+      RegionRequirement(in_pipepart[0][fwd_input_idx[0]],
+                        0 /*projection id*/,
+                        READ_ONLY,
+                        EXCLUSIVE,
+                        inputs[0]->region));
   launcher.add_field(idx++, FID_DATA);
-  launcher.add_region_requirement(RegionRequirement(in_pipepart[1][fwd_input_idx[1]],
-                                                    0 /*projection id*/,
-                                                    READ_ONLY,
-                                                    EXCLUSIVE,
-                                                    inputs[1]->region));
+  launcher.add_region_requirement(
+      RegionRequirement(in_pipepart[1][fwd_input_idx[1]],
+                        0 /*projection id*/,
+                        READ_ONLY,
+                        EXCLUSIVE,
+                        inputs[1]->region));
   launcher.add_field(idx++, FID_DATA);
-  launcher.add_region_requirement(RegionRequirement(in_pipepart[2][fwd_input_idx[2]],
-                                                    0 /*projection id*/,
-                                                    READ_ONLY,
-                                                    EXCLUSIVE,
-                                                    inputs[2]->region));
+  launcher.add_region_requirement(
+      RegionRequirement(in_pipepart[2][fwd_input_idx[2]],
+                        0 /*projection id*/,
+                        READ_ONLY,
+                        EXCLUSIVE,
+                        inputs[2]->region));
   launcher.add_field(idx++, FID_DATA);
   launcher.add_region_requirement(RegionRequirement(weights[0]->part,
                                                     0 /*projection id*/,
@@ -614,18 +618,19 @@ void MultiHeadAttention::pipeforward(FFModel const &ff) {
                                                     EXCLUSIVE,
                                                     weights[0]->region));
   launcher.add_field(idx++, FID_DATA);
-  launcher.add_region_requirement(RegionRequirement(outputs[0]->out_pipepart[fwd_output_idx],
-                                                    0 /*projection id*/,
-                                                    WRITE_ONLY,
-                                                    EXCLUSIVE,
-                                                    outputs[0]->region));
+  launcher.add_region_requirement(
+      RegionRequirement(outputs[0]->out_pipepart[fwd_output_idx],
+                        0 /*projection id*/,
+                        WRITE_ONLY,
+                        EXCLUSIVE,
+                        outputs[0]->region));
   launcher.add_field(4, FID_DATA);
   fwd_input_idx[0] =
-        (fwd_input_idx[0] + 1) % (inputs[0]->pipe_buf_size / ubSize); 
+      (fwd_input_idx[0] + 1) % (inputs[0]->pipe_buf_size / ubSize);
   fwd_input_idx[1] =
-        (fwd_input_idx[1] + 1) % (inputs[1]->pipe_buf_size / ubSize); 
+      (fwd_input_idx[1] + 1) % (inputs[1]->pipe_buf_size / ubSize);
   fwd_input_idx[2] =
-        (fwd_input_idx[2] + 1) % (inputs[2]->pipe_buf_size / ubSize); 
+      (fwd_input_idx[2] + 1) % (inputs[2]->pipe_buf_size / ubSize);
   fwd_output_idx = (fwd_output_idx + 1) % outputs[0]->pipe_num_part_out;
   runtime->execute_index_space(ctx, launcher);
 }
@@ -761,23 +766,26 @@ void MultiHeadAttention::pipebackward(FFModel const &ff) {
                          false /*must*/,
                          0 /*mapper_id*/,
                          outputs[0]->machine_view.hash());
-  launcher.add_region_requirement(RegionRequirement(in_pipepart[0][bwd_input_idx[0]],
-                                                    0 /*projection id*/,
-                                                    READ_ONLY,
-                                                    EXCLUSIVE,
-                                                    inputs[0]->region));
+  launcher.add_region_requirement(
+      RegionRequirement(in_pipepart[0][bwd_input_idx[0]],
+                        0 /*projection id*/,
+                        READ_ONLY,
+                        EXCLUSIVE,
+                        inputs[0]->region));
   launcher.add_field(0, FID_DATA);
-  launcher.add_region_requirement(RegionRequirement(in_pipepart[1][bwd_input_idx[1]],
-                                                    0 /*projection id*/,
-                                                    READ_ONLY,
-                                                    EXCLUSIVE,
-                                                    inputs[1]->region));
+  launcher.add_region_requirement(
+      RegionRequirement(in_pipepart[1][bwd_input_idx[1]],
+                        0 /*projection id*/,
+                        READ_ONLY,
+                        EXCLUSIVE,
+                        inputs[1]->region));
   launcher.add_field(1, FID_DATA);
-  launcher.add_region_requirement(RegionRequirement(in_pipepart[2][bwd_input_idx[2]],
-                                                    0 /*projection id*/,
-                                                    READ_ONLY,
-                                                    EXCLUSIVE,
-                                                    inputs[2]->region));
+  launcher.add_region_requirement(
+      RegionRequirement(in_pipepart[2][bwd_input_idx[2]],
+                        0 /*projection id*/,
+                        READ_ONLY,
+                        EXCLUSIVE,
+                        inputs[2]->region));
   launcher.add_field(2, FID_DATA);
   launcher.add_region_requirement(RegionRequirement(weights[0]->part,
                                                     0 /*projection id*/,
@@ -785,11 +793,12 @@ void MultiHeadAttention::pipebackward(FFModel const &ff) {
                                                     EXCLUSIVE,
                                                     weights[0]->region));
   launcher.add_field(3, FID_DATA);
-  launcher.add_region_requirement(RegionRequirement(outputs[0]->out_pipepart_grad[bwd_output_idx],
-                                                    0 /*projection id*/,
-                                                    READ_ONLY,
-                                                    EXCLUSIVE,
-                                                    outputs[0]->region_grad));
+  launcher.add_region_requirement(
+      RegionRequirement(outputs[0]->out_pipepart_grad[bwd_output_idx],
+                        0 /*projection id*/,
+                        READ_ONLY,
+                        EXCLUSIVE,
+                        outputs[0]->region_grad));
   launcher.add_field(4, FID_DATA);
   launcher.add_region_requirement(RegionRequirement(weights[0]->part_grad,
                                                     0 /*projection id*/,
@@ -797,38 +806,41 @@ void MultiHeadAttention::pipebackward(FFModel const &ff) {
                                                     EXCLUSIVE,
                                                     weights[0]->region_grad));
   launcher.add_field(5, FID_DATA);
-  launcher.add_region_requirement(RegionRequirement(in_pipepart_grad[0][bwd_input_idx[0]],
-                                                    0 /*projection id*/,
-                                                    READ_WRITE,
-                                                    EXCLUSIVE,
-                                                    inputs[0]->region_grad));
+  launcher.add_region_requirement(
+      RegionRequirement(in_pipepart_grad[0][bwd_input_idx[0]],
+                        0 /*projection id*/,
+                        READ_WRITE,
+                        EXCLUSIVE,
+                        inputs[0]->region_grad));
   launcher.add_field(6, FID_DATA);
   int num_regions = 7;
   if (inputs[1]->region != inputs[0]->region) {
     // when key != query
-    launcher.add_region_requirement(RegionRequirement(in_pipepart_grad[1][bwd_input_idx[1]],
-                                                      0 /*projection id*/,
-                                                      READ_WRITE,
-                                                      EXCLUSIVE,
-                                                      inputs[1]->region_grad));                                               
+    launcher.add_region_requirement(
+        RegionRequirement(in_pipepart_grad[1][bwd_input_idx[1]],
+                          0 /*projection id*/,
+                          READ_WRITE,
+                          EXCLUSIVE,
+                          inputs[1]->region_grad));
     launcher.add_field(num_regions++, FID_DATA);
   }
   if ((inputs[2]->region != inputs[0]->region) &&
       (inputs[2]->region != inputs[1]->region)) {
     // when value != key and value != query
-    launcher.add_region_requirement(RegionRequirement(in_pipepart_grad[2][bwd_input_idx[2]],
-                                                      0 /*projection id*/,
-                                                      READ_WRITE,
-                                                      EXCLUSIVE,
-                                                      inputs[2]->region_grad));
+    launcher.add_region_requirement(
+        RegionRequirement(in_pipepart_grad[2][bwd_input_idx[2]],
+                          0 /*projection id*/,
+                          READ_WRITE,
+                          EXCLUSIVE,
+                          inputs[2]->region_grad));
     launcher.add_field(num_regions++, FID_DATA);
   }
   bwd_input_idx[0] =
-        (bwd_input_idx[0] + 1) % (inputs[0]->pipe_buf_size / ubSize);
+      (bwd_input_idx[0] + 1) % (inputs[0]->pipe_buf_size / ubSize);
   bwd_input_idx[1] =
-        (bwd_input_idx[1] + 1) % (inputs[1]->pipe_buf_size / ubSize);
+      (bwd_input_idx[1] + 1) % (inputs[1]->pipe_buf_size / ubSize);
   bwd_input_idx[2] =
-        (bwd_input_idx[2] + 1) % (inputs[2]->pipe_buf_size / ubSize);
+      (bwd_input_idx[2] + 1) % (inputs[2]->pipe_buf_size / ubSize);
   bwd_output_idx = (bwd_output_idx + 1) % outputs[0]->pipe_num_part_out;
   runtime->execute_index_space(ctx, launcher);
 }

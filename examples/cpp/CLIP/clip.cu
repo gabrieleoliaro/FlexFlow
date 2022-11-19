@@ -13,13 +13,13 @@
  * limitations under the License.
  */
 
-#include "flexflow/utils/cuda_helper.h"
 #include "clip.h"
+#include "flexflow/utils/cuda_helper.h"
 
 void DataLoader::load_text_input(Task const *task,
-                            std::vector<PhysicalRegion> const &regions,
-                            Context ctx,
-                            Runtime *runtime) {
+                                 std::vector<PhysicalRegion> const &regions,
+                                 Context ctx,
+                                 Runtime *runtime) {
   assert(regions.size() == 2);
   assert(task->regions.size() == 2);
   SampleIdxs *meta = (SampleIdxs *)task->local_args;
@@ -63,9 +63,9 @@ void DataLoader::load_text_input(Task const *task,
 }
 
 void DataLoader::load_visual_input(Task const *task,
-                            std::vector<PhysicalRegion> const &regions,
-                            Context ctx,
-                            Runtime *runtime) {
+                                   std::vector<PhysicalRegion> const &regions,
+                                   Context ctx,
+                                   Runtime *runtime) {
   assert(regions.size() == 2);
   assert(task->regions.size() == 2);
   SampleIdxs *meta = (SampleIdxs *)task->local_args;
@@ -97,7 +97,6 @@ void DataLoader::load_visual_input(Task const *task,
   checkCUDA(cudaDeviceSynchronize());
 }
 
-
 void DataLoader::load_label(Task const *task,
                             std::vector<PhysicalRegion> const &regions,
                             Context ctx,
@@ -115,7 +114,7 @@ void DataLoader::load_label(Task const *task,
                                             false /*readOutput*/);
   int batch_size = acc_batch_label.rect.hi[1] - acc_batch_label.rect.lo[1] + 1;
   int num_label = acc_batch_label.rect.hi[0] - acc_batch_label.rect.lo[0] + 1;
-//  assert(num_label == 1); // Kaggle dataset a has single label
+  //  assert(num_label == 1); // Kaggle dataset a has single label
   assert(acc_batch_label.rect.hi[0] == acc_full_label.rect.hi[0]);
   assert(acc_batch_label.rect.lo[0] == acc_full_label.rect.lo[0]);
   float *label_zc;
@@ -135,4 +134,3 @@ void DataLoader::load_label(Task const *task,
                        cudaMemcpyHostToDevice));
   checkCUDA(cudaFreeHost(label_zc));
 }
-

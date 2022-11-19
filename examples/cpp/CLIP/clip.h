@@ -24,7 +24,7 @@ struct CLIPConfig {
 
   // Text Transformer arguments
   // hidden_size = embed_dim (for multi-head attention) = transformer_width
-  int tt_hidden_size, tt_num_heads,  tt_num_layers, sequence_length;
+  int tt_hidden_size, tt_num_heads, tt_num_layers, sequence_length;
 
   // Vision Transformer arguments
   int vt_hidden_size, vt_num_heads, vt_num_layers;
@@ -49,13 +49,13 @@ public:
                                   Context ctx,
                                   Runtime *runtime);
   static void load_text_input(Task const *task,
-                         std::vector<PhysicalRegion> const &regions,
-                         Context ctx,
-                         Runtime *runtime);
+                              std::vector<PhysicalRegion> const &regions,
+                              Context ctx,
+                              Runtime *runtime);
   static void load_visual_input(Task const *task,
-                         std::vector<PhysicalRegion> const &regions,
-                         Context ctx,
-                         Runtime *runtime);
+                                std::vector<PhysicalRegion> const &regions,
+                                Context ctx,
+                                Runtime *runtime);
   static void load_label(Task const *task,
                          std::vector<PhysicalRegion> const &regions,
                          Context ctx,
@@ -65,7 +65,8 @@ public:
   int num_samples, next_index;
 
 private:
-  Tensor full_text_input, full_visual_input, batch_text_input, batch_visual_input;
+  Tensor full_text_input, full_visual_input, batch_text_input,
+      batch_visual_input;
   Tensor full_label, batch_label;
 };
 

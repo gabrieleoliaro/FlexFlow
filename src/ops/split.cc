@@ -189,11 +189,12 @@ void Split::pipeinit(FFModel const &ff) {
                                                     inputs[0]->region));
   launcher.add_field(0, FID_DATA);
   for (int i = 0; i < numOutputs; i++) {
-    launcher.add_region_requirement(RegionRequirement(outputs[i]->out_pipepart[init_output_idx],
-                                                      0 /*projection id*/,
-                                                      WRITE_ONLY,
-                                                      EXCLUSIVE,
-                                                      outputs[i]->region));
+    launcher.add_region_requirement(
+        RegionRequirement(outputs[i]->out_pipepart[init_output_idx],
+                          0 /*projection id*/,
+                          WRITE_ONLY,
+                          EXCLUSIVE,
+                          outputs[i]->region));
     launcher.add_field(i + 1, FID_DATA);
   }
   init_output_idx = (init_output_idx + 1) % outputs[0]->pipe_num_part_out;

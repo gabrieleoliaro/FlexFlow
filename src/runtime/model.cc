@@ -3143,15 +3143,19 @@ void FFModel::compile(LossType loss_type,
       bool found = false;
       for (int j = 0; j < op->inputs[i]->num_to_stages; j++) {
         // this input has already been mapped to this stage before
-        if (op->inputs[i]->stage_mapped_op[j]->outputs[0]->machine_view == op->outputs[0]->machine_view) {
+        if (op->inputs[i]->stage_mapped_op[j]->outputs[0]->machine_view ==
+            op->outputs[0]->machine_view) {
           printf("input[%d] mapped to stage[%ld] before\n", i, op->stage_guid);
           assert(!found);
           found = true;
           int dst_idx = op->inputs[i]->mapped_op_dst_idx[j];
           for (int k = 0; k < op->inputs[i]->pipe_buf_size / op->ubSize; k++) {
-            assert(op->inputs[i]->stage_mapped_op[j]->in_pipepart[dst_idx][k] != LogicalPartition::NO_PART);
-            op->in_pipepart[i][k] = op->inputs[i]->stage_mapped_op[j]->in_pipepart[dst_idx][k];
-            op->in_pipepart_grad[i][k] = op->inputs[i]->stage_mapped_op[j]->in_pipepart_grad[dst_idx][k];
+            assert(op->inputs[i]->stage_mapped_op[j]->in_pipepart[dst_idx][k] !=
+                   LogicalPartition::NO_PART);
+            op->in_pipepart[i][k] =
+                op->inputs[i]->stage_mapped_op[j]->in_pipepart[dst_idx][k];
+            op->in_pipepart_grad[i][k] =
+                op->inputs[i]->stage_mapped_op[j]->in_pipepart_grad[dst_idx][k];
           }
           break;
         }
@@ -3175,9 +3179,9 @@ void FFModel::compile(LossType loss_type,
     }
 
     // if (op->is_parallel_op())
-      // intra-stage parallelism, TODO: this should partition on subregion when
-      // pipeline is enabled
-      // ((ParallelOp *)op)->create_input_partition(*this);
+    // intra-stage parallelism, TODO: this should partition on subregion when
+    // pipeline is enabled
+    // ((ParallelOp *)op)->create_input_partition(*this);
     // op->map_output_tensors(*this);
   }
 

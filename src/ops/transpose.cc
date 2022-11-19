@@ -197,8 +197,8 @@ void Transpose::init_meta(TransposeMeta *m,
                           Domain const &in_domain,
                           Domain const &out_domain) const {
   for (int i = 0; i < out_domain.get_dim(); i++) {
-    assert(out_domain.hi()[i] == in_domain.hi()[this->perm[i]]);
-    assert(out_domain.lo()[i] == in_domain.lo()[this->perm[i]]);
+    assert(out_domain.hi()[i] - out_domain.lo()[i] == in_domain.hi()[this->perm[i]] - in_domain.lo()[this->perm[i]]);
+    // assert(out_domain.lo()[i] == in_domain.lo()[this->perm[i]]);
   }
   m->num_dim = out_domain.get_dim();
   for (int i = 0; i < m->num_dim; i++)

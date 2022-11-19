@@ -778,7 +778,7 @@ void Conv2D::pipeforward(FFModel const &ff) {
                                                     weights[0]->region));
   launcher.add_field(2, FID_DATA);
   if (use_bias) {
-    launcher.add_region_requirement(RegionRequirement(weights[1]->region,
+    launcher.add_region_requirement(RegionRequirement(weights[1]->part,
                                                       0 /*projection id*/,
                                                       READ_ONLY,
                                                       EXCLUSIVE,

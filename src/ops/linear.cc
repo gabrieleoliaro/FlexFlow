@@ -367,10 +367,14 @@ OpMeta *Linear::init_task_with_dim(Task const *task,
   int in_dim = acc_kernel.rect.hi[0] - acc_kernel.rect.lo[0] + 1;
   int out_dim = acc_output.rect.hi[0] - acc_output.rect.lo[0] + 1;
   int batch_size = acc_output.rect.volume() / out_dim;
-  printf("init linear (input): in_dim(%d) out_dim(%d) batch_size(%d)\n",
+  int out1 = acc_output.rect.hi[1] - acc_output.rect.lo[1] + 1;
+  int out2 = acc_output.rect.hi[2] - acc_output.rect.lo[2] + 1;
+  printf("init linear (input): in_dim(%d) out_dim(%d, %d, %d) batch_size(%d)\n",
          in_dim,
          out_dim,
-         batch_size);
+         out1,
+         out2,
+         out2);
   LinearMeta *m = new LinearMeta(handle, batch_size);
   m->activation = linear->activation;
   m->use_bias = linear->use_bias;

@@ -3020,19 +3020,32 @@ bool FFModel::convert_graph_to_operators(
   std::unordered_map<Node, int> todos;
   std::unordered_map<Node, Op *> node_to_op;
   std::vector<Node> queue;
+  size_t num_in = 0;
   for (auto const &it : graph->inEdges) {
     auto const &inList = it.second;
     if (inList.size() == 0) {
       queue.push_back(it.first);
+      num_in++;
     } else {
       todos[it.first] = (int)inList.size();
     }
   }
   sort(queue.begin(), queue.end());
+  std::reverse(queue.begin(), queue.end());
 
   size_t index = 0;
   while (index < queue.size()) {
-    Node node = queue[index++];
+    // Node node = queue[index++];
+    Node node;
+    if (num_in > 0) {
+      node = queue[index];
+      num_in--;
+    }
+    else {
+      node = queue[queue.size() - 1];
+      std::rotate(queue.begin(), queue.end() - 1, queue.end());
+    }
+    index++;   
     assert(node.ptr != NULL);
     auto const &inList = graph->inEdges.find(node)->second;
     ParallelTensor inputs[MAX_NUM_INPUTS];

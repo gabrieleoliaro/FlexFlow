@@ -1564,9 +1564,9 @@ GraphOptimalViewSerialized
            "machine-model-file should not be empty.");
   }
   // Assume this task is running on GPU0
-  std::shared_ptr<Simulator> simulator(
-      new Simulator(model, model->handlers[0], gpu_mem, machine));
-  model->simulator = simulator.get();
+  //std::shared_ptr<Simulator> simulator(
+      //new Simulator(model, model->handlers[0], gpu_mem, machine));
+  //model->simulator = simulator.get();
   std::unique_ptr<Graph> best_graph;
   std::unordered_map<Node, MachineView> optimal_views;
   // shicao

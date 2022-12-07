@@ -322,10 +322,12 @@ __host__ void FusedOp::forward_task(Task const *task,
           assert(my_input_accessor[0].domain.get_dim() + 1 ==
                  my_output_accessor[0].domain.get_dim());
           for (size_t i = 0; i < my_input_accessor[0].domain.get_dim(); i++) {
-            assert(my_input_accessor[0].domain.hi()[i] ==
-                   my_output_accessor[0].domain.hi()[i + 1]);
-            assert(my_input_accessor[0].domain.lo()[i] ==
-                   my_output_accessor[0].domain.lo()[i + 1]);
+            // assert(my_input_accessor[0].domain.hi()[i] ==
+            //        my_output_accessor[0].domain.hi()[i + 1]);
+            // assert(my_input_accessor[0].domain.lo()[i] ==
+            //        my_output_accessor[0].domain.lo()[i + 1]);
+            assert(my_input_accessor[0].domain.hi()[i] -  my_input_accessor[0].domain.lo()[i]
+                   == my_output_accessor[0].domain.hi()[i + 1] - my_output_accessor[0].domain.lo()[i + 1]);
           }
           assert(my_weight_accessor[0].domain.hi()[0] -
                      my_weight_accessor[0].domain.lo()[0] ==

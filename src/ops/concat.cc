@@ -358,7 +358,7 @@ void Concat::forward_task(Task const *task,
     // inputs[i] = helperGetTensorPointerRO<float>(
     //     regions[i + 1], task->regions[i + 1], FID_DATA, ctx, runtime);
     inputs[i] = helperGetGenericTensorAccessorRO(
-        DT_FLOAT, regions[0], task->regions[0], FID_DATA, ctx, runtime);
+        DT_FLOAT, regions[i+1], task->regions[i+1], FID_DATA, ctx, runtime);
   }
   Concat::forward_kernel_wrapper(
       m, output, inputs, cc->numInputs, cc->legion_axis);
@@ -422,7 +422,7 @@ void Concat::pipebackward(FFModel const &ff) {
     launcher.add_region_requirement(
         RegionRequirement(in_pipepart_grad[i][bwd_input_idx[i]],
                           0 /*projection id*/,
-                          READ_WRITE,
+                          WRITE_ONLY,
                           EXCLUSIVE,
                           inputs[i]->region_grad));
     // LogicalRegion lr = inputs[i]->region_grad;

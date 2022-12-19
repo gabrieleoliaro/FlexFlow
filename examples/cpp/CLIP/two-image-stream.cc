@@ -12,7 +12,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
- 
+
 #include "clip.h"
 
 using namespace Legion;
@@ -151,15 +151,15 @@ CLIPConfig::CLIPConfig(void) {
   // We assume hidden_size = embed_dim for convenience
   // hidden_size (for multi-head attention) = transformer_width
   // @warning FF runtime fails to run 768 (hidden size) and 12 (# of heads)
-  tt_hidden_size = 2048; // 512 or 768 (errors out when measuring op cost)
-  tt_num_heads = 16; // 8 or 12
+  tt_hidden_size = 768; // 512 or 768 (errors out when measuring op cost)
+  tt_num_heads = 12; // 8 or 12
   tt_num_layers = 12; // 12
 
-  sequence_length = 512; // 76
+  sequence_length = 76; // 76
 
   // Vision Transformer arguments
-  vt_hidden_size = 2048; // 768 or 1024
-  vt_num_heads = 16; // 12 or 16
+  vt_hidden_size = 768; // 768 or 1024
+  vt_num_heads = 12; // 12 or 16
   vt_num_layers = 12; // 12 or 24
 
   // Vision Transformer conv arguments
@@ -168,11 +168,11 @@ CLIPConfig::CLIPConfig(void) {
 
   // out_channels = vt_hidden_size
   in_channels = 3;
-  image_size = 336; // 224 or 336
+  image_size = 224; // 224 or 336
   // stride = kernel_size --> Image is kxk words
   kernel_size = 14; // 32, 16, 14
   padding = 0;
-  // num_branches = 4;
+  num_branches = 4;
 }
 
 void FlexFlow::top_level_task(Task const *task,
@@ -186,33 +186,56 @@ void FlexFlow::top_level_task(Task const *task,
   /// Text Input - WebImageText (CLIP) - similar total word count (50k) to GPT-2 WebText data
   /// Thus, we also assume seq length (1024), word embedding size (1600) of GPT-2
   /// Warning: Let's skip the embedding for convenience
-  Tensor text_input; // NLM
-  {
-    int const dims[] = {
-        ffConfig.ubatchUnit, tfConfig.sequence_length, tfConfig.tt_hidden_size};
-    text_input = ff.create_tensor<3>(dims, DT_FLOAT);
-  }
+  // Tensor text_input; // NLM
+  // {
+  //   int const dims[] = {
+  //       ffConfig.ubatchUnit, tfConfig.sequence_length, tfConfig.tt_hidden_size};
+  //   text_input = ff.create_tensor<3>(dims, DT_FLOAT);
+  // }
 
-  /// Image Input - Assume ImageNet dataset (resampled to size 256x256 or 224x224)
-  Tensor visual_input; // NCHW
+  // // /// Image Input - Assume ImageNet dataset (resampled to size 256x256 or 224x224)
+  // Tensor visual_input; // NCHW
+  // {
+  //   int const dims[] = {ffConfig.ubatchUnit, tfConfig.in_channels,
+  //                       tfConfig.image_size, tfConfig.image_size};
+  //   visual_input = ff.create_tensor<4>(dims, DT_FLOAT);
+  // }
+
+  Tensor RGB_input; // NCHW
   {
-    int const dims[] = {ffConfig.ubatchUnit, tfConfig.in_channels,
+    int const dims[] = {ffConfig.ubatchUnit, 3,
                         tfConfig.image_size, tfConfig.image_size};
-    visual_input = ff.create_tensor<4>(dims, DT_FLOAT);
+    RGB_input = ff.create_tensor<4>(dims, DT_FLOAT);
   }
 
-  /// Text encoder (Basically Transformer model)
-  /// A series of ResidualAttentionBlock
-  Tensor tt = text_input; // Encoded vector for text
-  tt = create_text_encoder(&ff,
-                          tt,
-                          tfConfig.tt_hidden_size,
-                          tfConfig.tt_num_heads,
-                          tfConfig.tt_hidden_size / tfConfig.tt_num_heads,
-                          tfConfig.tt_num_layers);
+  // Tensor flow_input; // NCHW
+  // {
+  //   int const dims[] = {ffConfig.ubatchUnit, 2,
+  //                       tfConfig.image_size, tfConfig.image_size};
+  //   flow_input = ff.create_tensor<4>(dims, DT_FLOAT);
+  // }
 
-  // // /// Image encoder
-  Tensor vt = visual_input; // Encoded vector for image
+  Tensor tt = RGB_input;
+  tt = create_image_encoder(&ff,
+                            tt,
+                            tfConfig.kernel_size,
+                            tfConfig.kernel_size,
+                            tfConfig.padding,
+                            tfConfig.vt_hidden_size,
+                            tfConfig.vt_num_heads,
+                            tfConfig.vt_hidden_size / tfConfig.vt_num_heads,
+                            tfConfig.vt_num_layers,
+                            ffConfig.ubatchUnit,
+                            tfConfig.image_size);
+  
+  Tensor flow_input; // NCHW
+  {
+    int const dims[] = {ffConfig.ubatchUnit, 2,
+                        tfConfig.image_size, tfConfig.image_size};
+    flow_input = ff.create_tensor<4>(dims, DT_FLOAT);
+  }
+
+  Tensor vt = flow_input;
   vt = create_image_encoder(&ff,
                             vt,
                             tfConfig.kernel_size,
@@ -224,6 +247,30 @@ void FlexFlow::top_level_task(Task const *task,
                             tfConfig.vt_num_layers,
                             ffConfig.ubatchUnit,
                             tfConfig.image_size);
+
+  /// Text encoder (Basically Transformer model)
+  /// A series of ResidualAttentionBlock
+  // Tensor tt = text_input; // Encoded vector for text
+  // tt = create_text_encoder(&ff,
+  //                         tt,
+  //                         tfConfig.tt_hidden_size,
+  //                         tfConfig.tt_num_heads,
+  //                         tfConfig.tt_hidden_size / tfConfig.tt_num_heads,
+  //                         tfConfig.tt_num_layers);
+
+  // // // /// Image encoder
+  // Tensor vt = visual_input; // Encoded vector for image
+  // vt = create_image_encoder(&ff,
+  //                           vt,
+  //                           tfConfig.kernel_size,
+  //                           tfConfig.kernel_size,
+  //                           tfConfig.padding,
+  //                           tfConfig.vt_hidden_size,
+  //                           tfConfig.vt_num_heads,
+  //                           tfConfig.vt_hidden_size / tfConfig.vt_num_heads,
+  //                           tfConfig.vt_num_layers,
+  //                           ffConfig.ubatchUnit,
+  //                           tfConfig.image_size);
 
   /// Calculate cosine similarity of images and text
 
@@ -242,13 +289,19 @@ void FlexFlow::top_level_task(Task const *task,
 //  std::vector<int> tt_shape{1, tt->adim[0], tt->adim[1]};
 //  tt = ff.reshape(tt, tt_shape);
 //
-  
-  /// FIXME: Temporary operator to enable mismatch of tt and vt
-  std::vector<int> tt_shape{ffConfig.ubatchUnit, vt->dims[0], tt->dims[0]*tt->dims[1]/vt->dims[0]};
-  tt = ff.reshape(tt, tt_shape);
+  std::cout << "before TE shape : ";
+  for (int i=0; i<5; ++i) {
+    std::cout << tt->dims[i] << ",";
+  }
+  std::cout << std::endl;
 
-  std::cout << "Shape (before batch_matmul): " << std::endl;
-  
+  /// FIXME: Temporary operator to enable mismatch of tt and vt
+  // std::vector<int> tt_shape{ffConfig.ubatchUnit, vt->dims[0], tt->dims[0]*tt->dims[1]/vt->dims[0]};
+  // std::vector<int> tt_shape{ffConfig.ubatchUnit, vt->dims[0], vt->dims[1]};
+  // tt = ff.reshape(tt, tt_shape);
+  std::vector<int> vt_shape{ffConfig.ubatchUnit, tt->dims[0], tt->dims[1]};
+  vt = ff.reshape(vt, vt_shape);
+
   /// Cosine similarity (Matmul between image and text features)
   /// FIXME: Replace with bmm instead of add
   for (int i=0; i<5; ++i) {
@@ -321,7 +374,6 @@ void FlexFlow::top_level_task(Task const *task,
   log_app.print("Num. epochs = %d", ffConfig.epochs);
   log_app.print("Num. iterations/epoch = %d", 16);
   printf("parameters.size() = %lu\n", ff.parameters.size());
-  
   double ts_start = Realm::Clock::current_time_in_microseconds();
   for (int epoch = 0; epoch < ffConfig.epochs; epoch++) {
     // ff.reset_metrics();

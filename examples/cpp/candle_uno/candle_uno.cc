@@ -42,6 +42,16 @@ CandleConfig::CandleConfig(void) {
   input_features["drug1.fingerprints"] = "drug.fingerprints";
   input_features["drug2.descriptors"] = "drug.descriptors";
   input_features["drug2.fingerprints"] = "drug.fingerprints";
+  input_features["drug3.descriptors"] = "drug.descriptors";
+  input_features["drug3.fingerprints"] = "drug.fingerprints";
+  // input_features["drug4.descriptors"] = "drug.descriptors";
+  // input_features["drug4.fingerprints"] = "drug.fingerprints";
+  // input_features["drug5.descriptors"] = "drug.descriptors";
+  // input_features["drug5.fingerprints"] = "drug.fingerprints";
+  // input_features["drug6.descriptors"] = "drug.descriptors";
+  // input_features["drug6.fingerprints"] = "drug.fingerprints";
+  // input_features["drug7.descriptors"] = "drug.descriptors";
+  // input_features["drug7.fingerprints"] = "drug.fingerprints";
 }
 
 Tensor build_feature_model(FFModel *model,
@@ -134,33 +144,33 @@ void FlexFlow::top_level_task(Task const *task,
   // metrics.push_back(METRICS_MEAN_SQUARED_ERROR);
   ff.compile(optimizer, LOSS_MEAN_SQUARED_ERROR_AVG_REDUCE, metrics);
   // Data Loader
-  DataLoader data_loader(ff, candle_config, all_inputs, ff.label_tensor);
+  // DataLoader data_loader(ff, candle_config, all_inputs, ff.label_tensor);
   ff.init_operators();
   ff.zero_weight_gradients();
   // data_loader.next_batch(ff);
   // data_loader.reset();
   // ff.init_operators();
   for (int iter = 0; iter < 1; iter++) {
-    data_loader.reset();
-    ff.reset_metrics();
+    // data_loader.reset();
+    // ff.reset_metrics();
     ff.reset_pipe_idx();
-    data_loader.reset_idx();
+    // data_loader.reset_idx();
     for (int iter_inner = 0; iter_inner < ff.iter_perbatch; iter_inner++) {
-      if (candle_config.dataset_path.length() == 2) {
-        // Only load data once for random input
-        for (size_t i = 0; i < data_loader.batch_inputs.size(); i++) {
-          printf("load input [%ld]\n", i);
-          for (int k = 0;
-               k < data_loader.batch_inputs[i]->parallel_tensor->owner_op->nFnB;
-               k++) {
-            data_loader.next_input_ubatch(ff, i);
-          }
-        }
+      // if (candle_config.dataset_path.length() == 2) {
+      //   // Only load data once for random input
+      //   for (size_t i = 0; i < data_loader.batch_inputs.size(); i++) {
+      //     printf("load input [%ld]\n", i);
+      //     for (int k = 0;
+      //          k < data_loader.batch_inputs[i]->parallel_tensor->owner_op->nFnB;
+      //          k++) {
+      //       data_loader.next_input_ubatch(ff, i);
+      //     }
+      //   }
 
-        for (int i = 0; i < ff.get_final_operator()->nFnB; i++) {
-          data_loader.next_label_ubatch(ff);
-        }
-      }
+      //   for (int i = 0; i < ff.get_final_operator()->nFnB; i++) {
+      //     data_loader.next_label_ubatch(ff);
+      //   }
+      // }
       ff.forward();
       ff.zero_input_gradients();
       ff.backward();
@@ -169,50 +179,71 @@ void FlexFlow::top_level_task(Task const *task,
     ff.zero_weight_gradients();
   }
 
+  for (int iter = 0; iter < 1; iter++) {
+      ff.reset_pipe_idx();
+      runtime->begin_trace(ctx, 111 /*trace_id*/);
+      for (int iter_inner = 0; iter_inner < ff.iter_perbatch; iter_inner++) {
+        ff.forward();
+        // ff.zero_input_gradients();
+        ff.backward();
+      }
+      ff.update();
+      ff.zero_weight_gradients();
+      runtime->end_trace(ctx, 111 /*trace_id*/);
+  }
+
+  // Start timer
+  {
+    runtime->issue_execution_fence(ctx);
+    TimingLauncher timer(MEASURE_MICRO_SECONDS);
+    Future future = runtime->issue_timing_measurement(ctx, timer);
+    future.get_void_result();
+  }
   log_app.print("Warmup finished...Start timer...");
   log_app.print("Num. epochs = %d", ff_config.epochs);
-  log_app.print("Num. iterations/epoch = %d",
-                data_loader.num_samples / ff_config.batchSize);
+  log_app.print("Num. iterations/epoch = %d", 16);
+  printf("parameters.size() = %lu\n", ff.parameters.size());
   double ts_start = Realm::Clock::current_time_in_microseconds();
   for (int epoch = 0; epoch < ff_config.epochs; epoch++) {
     // data_loader.reset();
     // ff.reset_metrics();
-    int iterations = data_loader.num_samples / ff_config.batchSize;
+    // int iterations = data_loader.num_samples / ff_config.batchSize;
+    int iterations = 16;
     for (int iter = 0; iter < iterations; iter++) {
       ff.reset_pipe_idx();
       // data_loader.reset_idx();
       runtime->begin_trace(ctx, 111 /*trace_id*/);
       for (int iter_inner = 0; iter_inner < ff.iter_perbatch; iter_inner++) {
-        if (candle_config.dataset_path.length() == 2) {
-          // Only load data once for random input
-          for (size_t i = 0; i < data_loader.batch_inputs.size(); i++) {
-            printf("load input [%ld]\n", i);
-            for (int k = 0;
-                 k <
-                 data_loader.batch_inputs[i]->parallel_tensor->owner_op->nFnB;
-                 k++) {
-              data_loader.next_input_ubatch(ff, i);
-            }
-          }
+        // if (candle_config.dataset_path.length() == 2) {
+        //   // Only load data once for random input
+        //   for (size_t i = 0; i < data_loader.batch_inputs.size(); i++) {
+        //     printf("load input [%ld]\n", i);
+        //     for (int k = 0;
+        //          k <
+        //          data_loader.batch_inputs[i]->parallel_tensor->owner_op->nFnB;
+        //          k++) {
+        //       data_loader.next_input_ubatch(ff, i);
+        //     }
+        //   }
 
-          for (int i = 0; i < ff.get_final_operator()->nFnB; i++) {
-            data_loader.next_label_ubatch(ff);
-          }
-        } else if (candle_config.dataset_path.length() != 0) {
-          // shicao pipeline
-          for (size_t i = 0; i < data_loader.batch_inputs.size(); i++) {
-            for (int k = 0;
-                 k <
-                 data_loader.batch_inputs[i]->parallel_tensor->owner_op->nFnB;
-                 k++) {
-              data_loader.next_input_ubatch(ff, i);
-            }
-          }
+        //   for (int i = 0; i < ff.get_final_operator()->nFnB; i++) {
+        //     data_loader.next_label_ubatch(ff);
+        //   }
+        // } else if (candle_config.dataset_path.length() != 0) {
+        //   // shicao pipeline
+        //   for (size_t i = 0; i < data_loader.batch_inputs.size(); i++) {
+        //     for (int k = 0;
+        //          k <
+        //          data_loader.batch_inputs[i]->parallel_tensor->owner_op->nFnB;
+        //          k++) {
+        //       data_loader.next_input_ubatch(ff, i);
+        //     }
+        //   }
 
-          for (int i = 0; i < ff.get_final_operator()->nFnB; i++) {
-            data_loader.next_label_ubatch(ff);
-          }
-        }
+        //   for (int i = 0; i < ff.get_final_operator()->nFnB; i++) {
+        //     data_loader.next_label_ubatch(ff);
+        //   }
+        // }
         // log_app.print("DEBUG: forward...");
         ff.forward();
         // log_app.print("DEBUG: zero input gradients...");
@@ -228,15 +259,18 @@ void FlexFlow::top_level_task(Task const *task,
       runtime->end_trace(ctx, 111 /*trace_id*/);
     }
   }
-  runtime->issue_execution_fence(ctx);
-  TimingLauncher timer(MEASURE_MICRO_SECONDS);
-  Future future = runtime->issue_timing_measurement(ctx, timer);
-  future.get_void_result();
+  // End timer
+  {
+    runtime->issue_execution_fence(ctx);
+    TimingLauncher timer(MEASURE_MICRO_SECONDS);
+    Future future = runtime->issue_timing_measurement(ctx, timer);
+    future.get_void_result();
+  }
   double ts_end = Realm::Clock::current_time_in_microseconds();
   double run_time = 1e-6 * (ts_end - ts_start);
   printf("ELAPSED TIME = %.4fs, THROUGHPUT = %.2f samples/s\n",
          run_time,
-         data_loader.num_samples * ff_config.epochs / run_time);
+         16 * ff_config.batchSize * ff_config.epochs / run_time);
 }
 
 void parse_input_args(char **argv, int argc, CandleConfig &config) {

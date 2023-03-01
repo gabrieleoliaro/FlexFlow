@@ -13,6 +13,9 @@
  * limitations under the License.
  */
 
+// clip-n-text-branches.cc
+// - It has n identical (Transformer for text) branches given by arguments
+
 #include "clip.h"
 
 using namespace Legion;
@@ -42,9 +45,7 @@ Tensor create_residual_attention_block(FFModel *model,
 
   /// MLP: Linear, GELU (-->RELU), Linear
   t = model->dense(model->dense(t, hidden_size, AC_MODE_RELU, false /*bias*/),
-                   hidden_size,
-                   AC_MODE_NONE,
-                   false /*bias*/);
+                   hidden_size, AC_MODE_NONE, false /*bias*/);
 
   return t;
 }
@@ -58,8 +59,7 @@ Tensor create_transformer(FFModel *model,
                           int num_layers) {
   Tensor t = input;
   for (int i = 0; i < num_layers; i++)
-    t = create_residual_attention_block(
-        model, t, hidden_size, num_heads, kv_dim);
+    t = create_residual_attention_block(model, t, hidden_size, num_heads, kv_dim);
 
   return t;
 }
@@ -84,102 +84,18 @@ Tensor create_text_encoder(FFModel *model,
   return t;
 }
 
-/// Basically, it's VisionTransformer model
-Tensor create_image_encoder(FFModel *model,
-                            Tensor const &input,
-                            int kernel_size,
-                            int stride,
-                            int padding,
-                            int hidden_size,
-                            int num_heads,
-                            int kv_dim,
-                            int num_layers,
-                            int batch_size,
-                            int image_size) {
-
-  // shape = [*, width, grid, grid]
-  // FIXME: use_bias better be false
-  Tensor t = model->conv2d(input,
-                           hidden_size,
-                           kernel_size,
-                           kernel_size,
-                           stride,
-                           stride,
-                           padding,
-                           padding);
-
-  /// Reshape & Permute
-  // shape = [*, width, grid ** 2]
-  /// @warning I suspect -1 is not supported
-  //  std::vector<int> shape{batch_size, hidden_size, -1};
-
-  /// Self type-inference for reshape
-  int last_dim = (image_size + padding * 2) / kernel_size;
-  last_dim *= last_dim;
-
-  std::vector<int> shape{batch_size, hidden_size, last_dim};
-  t = model->reshape(t, shape);
-  // shape = [*, grid ** 2, width]
-  std::vector<int> perm1{0, 2, 1};
-  t = model->transpose(t, perm1);
-
-  /// Concat with class embedding
-  /// Add positional embedding
-  /// LayerNorm
-
-  /// Transformer
-  t = create_transformer(model, t, hidden_size, num_heads, kv_dim, num_layers);
-
-  /// LayerNorm
-
-  /// Projection
-
-  return t;
-}
-
 CLIPConfig::CLIPConfig(void) {
   // Text Transformer arguments
   // We assume hidden_size = embed_dim for convenience
   // hidden_size (for multi-head attention) = transformer_width
-  /// @warning FF runtime fails to run 768 (hidden size) and 12 (# of heads)
-  /// CU: cuEventSynchronize(e) = 700 (CUDA_ERROR_ILLEGAL_ADDRESS): an illegal memory access was encountered
-  // tt_hidden_size = 2304; // 512 or 768 (errors out when measuring op cost)
-  // tt_num_heads = 12; // 8 or 12
-  // tt_num_layers = 16; // 12
-
-  // sequence_length = 512; // 76
-
-  tt_hidden_size = 1024; // 512 or 768 (errors out when measuring op cost)
-  tt_num_heads = 16; // 8 or 12
-  tt_num_layers = 12; // 12
-
-  sequence_length = 256; // 76
-
-  // tt_hidden_size = 512; // 512 or 768 (errors out when measuring op cost)
-  // tt_num_heads = 8; // 8 or 12
-  // tt_num_layers = 12; // 12
-
-  // sequence_length = 256; // 76
   
+  tt_hidden_size = -1;
+  tt_num_heads = -1;
+  tt_num_layers = -1;
 
-  // Vision Transformer arguments
-  vt_hidden_size = 1024; // 768 or 1024
-  vt_num_heads = 16;     // 12 or 16
-  vt_num_layers = 24;    // 12 or 24
-
-  // Vision Transformer conv arguments
-  // Candidates: ViT-B/32, ViT-B/16, ViT-L/14, ViT-L/14-336px
-  // B and L means "Base" and "Large", /32 means input patch size = 32x32
-
-  // out_channels = vt_hidden_size
-  /// @warning FF runtime fails to run 336 (image size) and 14 (kernel size)
-  /// CU: cuEventSynchronize(e) = 700 (CUDA_ERROR_ILLEGAL_ADDRESS): an illegal memory access was encountered
-  in_channels = 3;
-  image_size = 224; // 224 or 336
-  // stride = kernel_size --> Image is kxk words
-  kernel_size = 16; // 32, 16, 14
-  padding = 0;
-  num_branches = 4;
+  sequence_length = -1;
+  
+  num_branches = -1;
 }
 
 void FlexFlow::top_level_task(Task const *task,
@@ -195,106 +111,14 @@ void FlexFlow::top_level_task(Task const *task,
   int argc = command_args.argc;
   parse_input_args(argv, argc, tfConfig);
 
-  /// Text Input - WebImageText (CLIP) - similar total word count (50k) to GPT-2 WebText data
-  /// Thus, we also assume seq length (1024), word embedding size (1600) of GPT-2
-  /// Warning: Let's skip the embedding for convenience
-  // Tensor text_input; // NLM
-  // {
-  //   int const dims[] = {
-  //       ffConfig.ubatchUnit, tfConfig.sequence_length, tfConfig.tt_hidden_size};
-  //   text_input = ff.create_tensor<3>(dims, DT_FLOAT);
-  // }
-
-//  std::cout << "Text Input shape : ";
-//  for (int i=0; i<5; ++i) {
-//    std::cout << text_input->dims[i] << ",";
-//  }
-//  std::cout << std::endl;
-
-  /// Image Input - Assume ImageNet dataset (resampled to size 256x256 or 224x224)
-//   Tensor visual_input; // NCHW
-//   {
-// //    int const dims[] = {ffConfig.batchSize, tfConfig.in_channels,
-// //                        tfConfig.image_size, tfConfig.image_size};
-//     int const dims[] = {
-//       ffConfig.ubatchUnit, tfConfig.sequence_length, tfConfig.tt_hidden_size};
-//     visual_input = ff.create_tensor<3>(dims, DT_FLOAT);
-//   }
-
-  /// Text encoder (Basically Transformer model)
-  /// A series of ResidualAttentionBlock
-  // Tensor tt = text_input; // Encoded vector for text
-  // tt = create_text_encoder(&ff,
-  //                         tt,
-  //                         tfConfig.tt_hidden_size,
-  //                         tfConfig.tt_num_heads,
-  //                         tfConfig.tt_hidden_size / tfConfig.tt_num_heads,
-  //                         tfConfig.tt_num_layers);
-
-  // /// Image encoder
-  // Tensor vt = visual_input; // Encoded vector for image
-  // vt = create_text_encoder(&ff,
-  //                          vt,
-  //                          tfConfig.tt_hidden_size,
-  //                          tfConfig.tt_num_heads,
-  //                          tfConfig.tt_hidden_size / tfConfig.tt_num_heads,
-  //                          tfConfig.tt_num_layers);
-
-  /// Calculate cosine similarity of images and text
-
-  /// @warning we skip normalization and scaling logits for now
-  /// cuz it is marginal compared to other ops in terms of compute cost
-
-  /// Normalize feature
-
-  /// FIXME: check if the shape is correct here
-  //  std::vector<int> vt_shape{1, vt->adim[0], vt->adim[1]};
-  //  vt = ff.reshape(vt, vt_shape);
-  //
-  //  std::vector<int> perm{1, 0};
-  //  tt = ff.transpose(tt, perm);
-  //
-  //  std::vector<int> tt_shape{1, tt->adim[0], tt->adim[1]};
-  //  tt = ff.reshape(tt, tt_shape);
-  //
-
-  /// FIXME: Temporary operator to fix mismatch of tt and vt
-  // std::vector<int> tt_shape{ffConfig.ubatchUnit, vt->dims[0], vt->dims[1]};
-  // tt = ff.reshape(tt, tt_shape);
-
-  // /// Cosine similarity (Matmul between image and text features)
-  // std::cout << "Final TE shape : ";
-  // for (int i=0; i<5; ++i) {
-  //   std::cout << tt->dims[i] << ",";
-  // }
-  // std::cout << std::endl;
-
-  // std::cout << "Final VE shape : ";
-  // for (int i=0; i<5; ++i) {
-  //   std::cout << vt->dims[i] << ",";
-  // }
-  // std::cout << std::endl;
-
-  /// FIXME: Later, we need to think about how to consider matrix of
-  /// (batch_size, batch_size) with our pipeline scheme instead of
-  /// (micro_batch_size, micro_batch_size) * (batch_size/micro_batch_size).
-  /// Currently, we are missing out (batch_size - micro_batch_size) * batch_size pairs
-  // Tensor ot = ff.batch_matmul(vt, tt);
-
-  //  std::cout << "output tensor : ";
-  //  for (int i=0; i<5; ++i) {
-  //    std::cout << ot->dims[i] << ",";
-  //  }
-  //  std::cout << std::endl;
-
-  /// Scaling logits
-
   Tensor encoded_inputs[MAX_NUM_INPUTS];
+
   for (int i = 0; i < tfConfig.num_branches; i++) {
     Tensor text_input; // NLM
     int const dims[] = {
         ffConfig.ubatchUnit, tfConfig.sequence_length, tfConfig.tt_hidden_size};
     text_input = ff.create_tensor<3>(dims, DT_FLOAT);
+    
     Tensor tt = create_text_encoder(&ff,
                           text_input,
                           tfConfig.tt_hidden_size,
@@ -330,7 +154,7 @@ void FlexFlow::top_level_task(Task const *task,
       ff.backward();
     }
     ff.update();
-    // ff.zero_weight_gradients();
+    ff.zero_weight_gradients();
   }
 
   for (int iter = 0; iter < 1; iter++) {
@@ -411,6 +235,13 @@ void parse_input_args(char **argv, int argc, CLIPConfig &config) {
       continue;
     }
   }
+  
+  // These should be given as an argument; check if it's default.
+  assert(config.sequence_length != -1);
+  assert(config.tt_num_layers != -1);
+  assert(config.tt_num_heads != -1);
+  assert(config.num_branches != -1);
+
 }
 
 DataLoader::DataLoader(FFModel &ff,

@@ -12,12 +12,17 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
- 
+
+// clip-n-text-branches.cc
+// - It has n identical (Transformer for text) branches given by arguments
+
 #include "clip.h"
 
 using namespace Legion;
 
 LegionRuntime::Logger::Category log_app("CLIP");
+
+void parse_input_args(char **argv, int argc, CLIPConfig &apConfig);
 
 Tensor create_residual_attention_block(FFModel *model,
                                        Tensor const &input,
@@ -30,6 +35,9 @@ Tensor create_residual_attention_block(FFModel *model,
   /// LayerNorm
 
   /// Multi-head attention
+  /// @warning It requires the input shape to be (N, L, D)
+  /// where N: batch size, L: seq length, H: width of Transformer
+  /// Note that it's different from PyTorch default (L, N, D)
   Tensor t = model->multihead_attention(
       input, input, input, hidden_size, num_heads, kv_dim, kv_dim);
 
@@ -37,7 +45,7 @@ Tensor create_residual_attention_block(FFModel *model,
 
   /// MLP: Linear, GELU (-->RELU), Linear
   t = model->dense(model->dense(t, hidden_size, AC_MODE_RELU, false /*bias*/),
-               hidden_size, AC_MODE_NONE, false /*bias*/);
+                   hidden_size, AC_MODE_NONE, false /*bias*/);
 
   return t;
 }
@@ -57,91 +65,21 @@ Tensor create_transformer(FFModel *model,
 }
 
 Tensor create_text_encoder(FFModel *model,
-                          Tensor const &input,
-                          int hidden_size,
-                          int num_heads,
-                          int kv_dim,
-                          int num_layers) {
+                           Tensor const &input,
+                           int hidden_size,
+                           int num_heads,
+                           int kv_dim,
+                           int num_layers) {
   Tensor t = input;
 
   /// Add positional embedding to token embeddings
 
-  /// permutation
-  // std::vector<int> perm2{1, 0, 2};
-  // t = model->transpose(t, perm2);
-
   /// Transformer
   t = create_transformer(model, t, hidden_size, num_heads, kv_dim, num_layers);
 
-  /// permutation
-  // t = model->transpose(t, perm2);
-
   /// Layernorm
-
+  
   /// Text projection
-
-
-  return t;
-}
-
-/// Basically, it's VisionTransformer model
-Tensor create_image_encoder(FFModel *model,
-                            Tensor const &input,
-                            int kernel_size,
-                            int stride,
-                            int padding,
-                            int hidden_size,
-                            int num_heads,
-                            int kv_dim,
-                            int num_layers,
-                            int batch_size,
-                            int image_size) {
-
-  // shape = [*, width, grid, grid]
-  // FIXME: use_bias better be false
-  Tensor t = model->conv2d(input,
-                           hidden_size,
-                           kernel_size, kernel_size,
-                           stride, stride,
-                           padding, padding);
-
-  /// Reshape & Permute
-  // shape = [*, width, grid ** 2]
-  /// @warning I suspect -1 is not supported
-//  std::vector<int> shape{batch_size, hidden_size, -1};
-
-  /// Self type-inference for reshape
-  int last_dim = (image_size + padding*2)/kernel_size;
-  last_dim *= last_dim;
-
-  std::vector<int> shape{batch_size, hidden_size, last_dim};
-  t = model->reshape(t, shape);
-  // shape = [*, grid ** 2, width]
-  std::vector<int> perm1{0, 2, 1};
-  t = model->transpose(t, perm1);
-
-  /// Concat with class embedding
-  /// Add positional embedding
-  /// LayerNorm
-
-  /// Permute
-  // std::vector<int> perm2{1, 0, 2};
-  // t = model->transpose(t, perm2);
-
-  /// Transformer
-  t = create_transformer(model,
-                         t,
-                         hidden_size,
-                         num_heads,
-                         kv_dim,
-                         num_layers);
-
-  /// Permute
-  // t = model->transpose(t, perm2);
-
-  /// LayerNorm
-
-  /// Projection
 
   return t;
 }
@@ -150,29 +88,14 @@ CLIPConfig::CLIPConfig(void) {
   // Text Transformer arguments
   // We assume hidden_size = embed_dim for convenience
   // hidden_size (for multi-head attention) = transformer_width
-  // @warning FF runtime fails to run 768 (hidden size) and 12 (# of heads)
-  tt_hidden_size = 2048; // 512 or 768 (errors out when measuring op cost)
-  tt_num_heads = 16; // 8 or 12
-  tt_num_layers = 12; // 12
+  
+  tt_hidden_size = -1;
+  tt_num_heads = -1;
+  tt_num_layers = -1;
 
-  sequence_length = 512; // 76
-
-  // Vision Transformer arguments
-  vt_hidden_size = 2048; // 768 or 1024
-  vt_num_heads = 16; // 12 or 16
-  vt_num_layers = 12; // 12 or 24
-
-  // Vision Transformer conv arguments
-  // Candidates: ViT-B/32, ViT-B/16, ViT-L/14, ViT-L/14-336px
-  // B and L means "Base" and "Large", /32 means input patch size = 32x32
-
-  // out_channels = vt_hidden_size
-  in_channels = 3;
-  image_size = 336; // 224 or 336
-  // stride = kernel_size --> Image is kxk words
-  kernel_size = 14; // 32, 16, 14
-  padding = 0;
-  // num_branches = 4;
+  sequence_length = -1;
+  
+  num_branches = -1;
 }
 
 void FlexFlow::top_level_task(Task const *task,
@@ -183,109 +106,47 @@ void FlexFlow::top_level_task(Task const *task,
   CLIPConfig tfConfig;
   FFModel ff(ffConfig);
 
-  /// Text Input - WebImageText (CLIP) - similar total word count (50k) to GPT-2 WebText data
-  /// Thus, we also assume seq length (1024), word embedding size (1600) of GPT-2
-  /// Warning: Let's skip the embedding for convenience
-  Tensor text_input; // NLM
-  {
+  InputArgs const &command_args = HighLevelRuntime::get_input_args();
+  char **argv = command_args.argv;
+  int argc = command_args.argc;
+  parse_input_args(argv, argc, tfConfig);
+
+  Tensor encoded_inputs[MAX_NUM_INPUTS];
+
+  for (int i = 0; i < tfConfig.num_branches; i++) {
+    Tensor text_input; // NLM
     int const dims[] = {
         ffConfig.ubatchUnit, tfConfig.sequence_length, tfConfig.tt_hidden_size};
     text_input = ff.create_tensor<3>(dims, DT_FLOAT);
-  }
-
-  /// Image Input - Assume ImageNet dataset (resampled to size 256x256 or 224x224)
-  Tensor visual_input; // NCHW
-  {
-    int const dims[] = {ffConfig.ubatchUnit, tfConfig.in_channels,
-                        tfConfig.image_size, tfConfig.image_size};
-    visual_input = ff.create_tensor<4>(dims, DT_FLOAT);
-  }
-
-  /// Text encoder (Basically Transformer model)
-  /// A series of ResidualAttentionBlock
-  Tensor tt = text_input; // Encoded vector for text
-  tt = create_text_encoder(&ff,
-                          tt,
+    
+    Tensor tt = create_text_encoder(&ff,
+                          text_input,
                           tfConfig.tt_hidden_size,
                           tfConfig.tt_num_heads,
                           tfConfig.tt_hidden_size / tfConfig.tt_num_heads,
                           tfConfig.tt_num_layers);
-
-  // // /// Image encoder
-  Tensor vt = visual_input; // Encoded vector for image
-  vt = create_image_encoder(&ff,
-                            vt,
-                            tfConfig.kernel_size,
-                            tfConfig.kernel_size,
-                            tfConfig.padding,
-                            tfConfig.vt_hidden_size,
-                            tfConfig.vt_num_heads,
-                            tfConfig.vt_hidden_size / tfConfig.vt_num_heads,
-                            tfConfig.vt_num_layers,
-                            ffConfig.ubatchUnit,
-                            tfConfig.image_size);
-
-  /// Calculate cosine similarity of images and text
-
-  /// @warning we skip normalization and scaling logits for now
-  /// cuz it is marginal compared to other ops in terms of compute cost
-
-  /// Normalize feature
-
-  /// FIXME: check if the shape is correct here
-//  std::vector<int> vt_shape{1, vt->adim[0], vt->adim[1]};
-//  vt = ff.reshape(vt, vt_shape);
-//
-//  std::vector<int> perm{1, 0};
-//  tt = ff.transpose(tt, perm);
-//
-//  std::vector<int> tt_shape{1, tt->adim[0], tt->adim[1]};
-//  tt = ff.reshape(tt, tt_shape);
-//
-  
-  /// FIXME: Temporary operator to enable mismatch of tt and vt
-  std::vector<int> tt_shape{ffConfig.ubatchUnit, vt->dims[0], tt->dims[0]*tt->dims[1]/vt->dims[0]};
-  tt = ff.reshape(tt, tt_shape);
-
-  std::cout << "Shape (before batch_matmul): " << std::endl;
-  
-  /// Cosine similarity (Matmul between image and text features)
-  /// FIXME: Replace with bmm instead of add
-  for (int i=0; i<5; ++i) {
-    std::cout << tt->dims[i] << ",";
+    encoded_inputs[i] = tt;
   }
-  std::cout << std::endl;
-
-  for (int i=0; i<5; ++i) {
-    std::cout << vt->dims[i] << ",";
-  }
-  std::cout << std::endl;
-
-  Tensor ot = ff.batch_matmul(vt, tt);
-
-//  std::cout << "output tensor : ";
-//  for (int i=0; i<5; ++i) {
-//    std::cout << ot->dims[i] << ",";
-//  }
-//  std::cout << std::endl;
-
-  /// Scaling logits
+  Tensor output = ff.concat(tfConfig.num_branches, encoded_inputs, -1 /*axis*/);
 
   Optimizer *optimizer = new SGDOptimizer(&ff, 0.01f);
   std::vector<MetricsType> metrics;
   // metrics.push_back(METRICS_ACCURACY);
 //   metrics.push_back(METRICS_MEAN_SQUARED_ERROR);
+
+  /// @warning: Code exits when we compile the model if we turn on op profiling
   ff.compile(optimizer, LOSS_MEAN_SQUARED_ERROR_AVG_REDUCE, metrics);
 
-//  std::cout << "Code reaches here after compilation" << std::endl;
 
+//  std::cout << "Code reaches here after compilation" << std::endl;
   // Data Loader
-  // DataLoader loader(ff, tfConfig, text_input, visual_input, ff.label_tensor, ot);
-  // loader.next_batch(ff);
-  // loader.reset();
+//   DataLoader loader(ff, tfConfig, text_input, visual_input, ff.label_tensor, ot);
+//   loader.next_batch(ff);
+//   loader.reset();
   ff.init_operators();
   ff.zero_weight_gradients();
 
+  // Warm-up before Legion dynamic tracing
   for (int iter = 0; iter < 1; iter++) {
     ff.reset_pipe_idx();
     for (int iter_inner = 0; iter_inner < ff.iter_perbatch; iter_inner++) {
@@ -297,18 +158,24 @@ void FlexFlow::top_level_task(Task const *task,
     ff.zero_weight_gradients();
   }
 
+  // Legion dyanmic tracing for better scheduling
   for (int iter = 0; iter < 1; iter++) {
-    ff.reset_pipe_idx();
-    runtime->begin_trace(ctx, 111 /*trace_id*/);
-    for (int iter_inner = 0; iter_inner < ff.iter_perbatch; iter_inner++) {
-      ff.forward();
-      // ff.zero_input_gradients();
-      ff.backward();
-    }
-    ff.update();
-    ff.zero_weight_gradients();
-    runtime->end_trace(ctx, 111 /*trace_id*/);
-  }
+      ff.reset_pipe_idx();
+      runtime->begin_trace(ctx, 111); // 111: trace_id
+      for (int iter_inner = 0; iter_inner < ff.iter_perbatch; iter_inner++) {
+        //runtime->begin_trace(ctx, 111);
+        ff.forward();
+        // ff.zero_input_gradients();
+        ff.backward();
+        //runtime->end_trace(ctx,111);
+      }
+      ff.update();
+      ff.zero_weight_gradients();
+      runtime->end_trace(ctx, 111); /// 111: trace_id
+  } 
+  
+  
+  // printf("================= NO WARMUP ITERATION - needs to be reverted for throughput measurement");
 
   // Start timer
   {
@@ -317,22 +184,25 @@ void FlexFlow::top_level_task(Task const *task,
     Future future = runtime->issue_timing_measurement(ctx, timer);
     future.get_void_result();
   }
+  
+  int m_iterations = 5;
+
   log_app.print("Warmup finished...Start timer...");
   log_app.print("Num. epochs = %d", ffConfig.epochs);
-  log_app.print("Num. iterations/epoch = %d", 16);
+  log_app.print("Num. iterations/epoch = %d", m_iterations);
   printf("parameters.size() = %lu\n", ff.parameters.size());
-  
   double ts_start = Realm::Clock::current_time_in_microseconds();
   for (int epoch = 0; epoch < ffConfig.epochs; epoch++) {
     // ff.reset_metrics();
-    int iterations = 16;
-    for (int iter = 0; iter < iterations; iter++) {
+    for (int iter = 0; iter < m_iterations; iter++) {
       ff.reset_pipe_idx();
       runtime->begin_trace(ctx, 111 /*trace_id*/);
       for (int iter_inner = 0; iter_inner < ff.iter_perbatch; iter_inner++) {
+        // runtime->begin_trace(ctx, 111 /*trace_id*/);
         ff.forward();
         // ff.zero_input_gradients();
         ff.backward();
+        // runtime->end_trace(ctx, 111 /*trace_id*/);
       }
       ff.update();
       ff.zero_weight_gradients();
@@ -350,7 +220,39 @@ void FlexFlow::top_level_task(Task const *task,
   double run_time = 1e-6 * (ts_end - ts_start);
   printf("ELAPSED TIME = %.4fs, THROUGHPUT = %.2f samples/s\n",
          run_time,
-         16 * ffConfig.batchSize * ffConfig.epochs / run_time);
+         m_iterations * ffConfig.batchSize * ffConfig.epochs / run_time);
+}
+
+void parse_input_args(char **argv, int argc, CLIPConfig &config) {
+  for (int i = 1; i < argc; i++) {
+    if (!strcmp(argv[i], "--num-branch")) {
+      config.num_branches = atoi(argv[++i]);
+      continue;
+    }
+    if (!strcmp(argv[i], "--hidden-size")) {
+      config.tt_hidden_size = atoi(argv[++i]);
+      continue;
+    }
+    if (!strcmp(argv[i], "--num-heads")) {
+      config.tt_num_heads = atof(argv[++i]);
+      continue;
+    }
+    if (!strcmp(argv[i], "--num-layer")) {
+      config.tt_num_layers = atoi(argv[++i]);
+      continue;
+    }
+    if (!strcmp(argv[i], "--seq-len")) {
+      config.sequence_length = atoi(argv[++i]);
+      continue;
+    }
+  }
+  
+  // These should be given as an argument; check if it's default.
+  assert(config.sequence_length != -1);
+  assert(config.tt_num_layers != -1);
+  assert(config.tt_num_heads != -1);
+  assert(config.num_branches != -1);
+
 }
 
 DataLoader::DataLoader(FFModel &ff,
@@ -376,13 +278,16 @@ DataLoader::DataLoader(FFModel &ff,
   }
   {
     batch_visual_input = _visual_input;
-    int const dims[] = {num_samples, tf.in_channels, tf.image_size, tf.image_size};
+    int const dims[] = {
+        num_samples, tf.in_channels, tf.image_size, tf.image_size};
     full_visual_input = ff.create_tensor<4>(dims, DT_FLOAT);
   }
   {
     batch_label = _label;
-//    std::cout << "output tensor dims[1] : " << _output_tensor->dims[1] << std::endl;
-    int const dims[] = {num_samples, tf.tt_hidden_size, _output_tensor->dims[1]};
+    //    std::cout << "output tensor dims[1] : " << _output_tensor->dims[1] <<
+    //    std::endl;
+    int const dims[] = {
+        num_samples, tf.tt_hidden_size, _output_tensor->dims[1]};
     full_label = ff.create_tensor<3>(dims, DT_FLOAT);
   }
 
@@ -456,137 +361,140 @@ void DataLoader::load_entire_dataset(Task const *task,
 
 void DataLoader::next_batch(FFModel &ff) {
   return;
-//  Context ctx = ff.config.lg_ctx;
-//  Runtime *runtime = ff.config.lg_hlr;
-//
-//  // Load Text Input
-//  {
-//    Domain domain = runtime->get_index_space_domain(
-//        ctx, batch_text_input->parallel_tensor->parallel_is);
-//    ArgumentMap argmap;
-//    int idx = next_index;
-//    for (Domain::DomainPointIterator it(domain); it; it++) {
-//      SampleIdxs meta;
-//      assert(ff.config.batchSize % batch_input->parallel_tensor->dims[2].size ==
-//             0);
-//      meta.num_samples =
-//          ff.config.batchSize / batch_input->parallel_tensor->dims[2].size;
-//      for (int i = 0; i < meta.num_samples; i++)
-//        meta.idxs[i] = idx++;
-//      argmap.set_point(*it, TaskArgument(&meta, sizeof(SampleIdxs)));
-//    }
-//    IndexLauncher launcher(CUSTOM_GPU_TASK_ID_2,
-//                           batch_input->parallel_tensor->parallel_is,
-//                           TaskArgument(NULL, 0),
-//                           argmap,
-//                           Predicate::TRUE_PRED,
-//                           false /*must*/,
-//                           0 /*mapper_id*/,
-//                           batch_input->parallel_tensor->machine_view.hash());
-//    // Full dataset in ZCM
-//    launcher.add_region_requirement(
-//        RegionRequirement(full_input->parallel_tensor->region,
-//                          0 /*projection id*/,
-//                          READ_ONLY,
-//                          EXCLUSIVE,
-//                          full_input->parallel_tensor->region,
-//                          MAP_TO_ZC_MEMORY));
-//    launcher.add_field(0, FID_DATA);
-//    launcher.add_region_requirement(
-//        RegionRequirement(batch_input->parallel_tensor->part,
-//                          0 /*projection id*/,
-//                          WRITE_ONLY,
-//                          EXCLUSIVE,
-//                          batch_input->parallel_tensor->region));
-//    launcher.add_field(1, FID_DATA);
-//    runtime->execute_index_space(ctx, launcher);
-//  }
-//  // Load Visual Input
-//  {
-//    Domain domain = runtime->get_index_space_domain(
-//        ctx, batch_input->parallel_tensor->parallel_is);
-//    ArgumentMap argmap;
-//    int idx = next_index;
-//    for (Domain::DomainPointIterator it(domain); it; it++) {
-//      SampleIdxs meta;
-//      assert(ff.config.batchSize % batch_input->parallel_tensor->dims[2].size ==
-//             0);
-//      meta.num_samples =
-//          ff.config.batchSize / batch_input->parallel_tensor->dims[2].size;
-//      for (int i = 0; i < meta.num_samples; i++)
-//        meta.idxs[i] = idx++;
-//      argmap.set_point(*it, TaskArgument(&meta, sizeof(SampleIdxs)));
-//    }
-//    IndexLauncher launcher(CUSTOM_GPU_TASK_ID_2,
-//                           batch_input->parallel_tensor->parallel_is,
-//                           TaskArgument(NULL, 0),
-//                           argmap,
-//                           Predicate::TRUE_PRED,
-//                           false /*must*/,
-//                           0 /*mapper_id*/,
-//                           batch_input->parallel_tensor->machine_view.hash());
-//    // Full dataset in ZCM
-//    launcher.add_region_requirement(
-//        RegionRequirement(full_input->parallel_tensor->region,
-//                          0 /*projection id*/,
-//                          READ_ONLY,
-//                          EXCLUSIVE,
-//                          full_input->parallel_tensor->region,
-//                          MAP_TO_ZC_MEMORY));
-//    launcher.add_field(0, FID_DATA);
-//    launcher.add_region_requirement(
-//        RegionRequirement(batch_input->parallel_tensor->part,
-//                          0 /*projection id*/,
-//                          WRITE_ONLY,
-//                          EXCLUSIVE,
-//                          batch_input->parallel_tensor->region));
-//    launcher.add_field(1, FID_DATA);
-//    runtime->execute_index_space(ctx, launcher);
-//  }
-//  // Load Labels
-//  {
-//    Domain domain = runtime->get_index_space_domain(
-//        ctx, batch_label->parallel_tensor->parallel_is);
-//    ArgumentMap argmap;
-//    int idx = next_index;
-//    for (Domain::DomainPointIterator it(domain); it; it++) {
-//      SampleIdxs meta;
-//      assert(ff.config.batchSize % batch_label->parallel_tensor->dims[2].size ==
-//             0);
-//      meta.num_samples =
-//          ff.config.batchSize / batch_label->parallel_tensor->dims[2].size;
-//      for (int i = 0; i < meta.num_samples; i++)
-//        meta.idxs[i] = idx++;
-//      argmap.set_point(*it, TaskArgument(&meta, sizeof(SampleIdxs)));
-//    }
-//    IndexLauncher launcher(CUSTOM_GPU_TASK_ID_2,
-//                           batch_label->parallel_tensor->parallel_is,
-//                           TaskArgument(NULL, 0),
-//                           argmap,
-//                           Predicate::TRUE_PRED,
-//                           false /*must*/,
-//                           0 /*mapper_id*/,
-//                           batch_label->parallel_tensor->machine_view.hash());
-//    // Full dataset in ZCM
-//    launcher.add_region_requirement(
-//        RegionRequirement(full_label->parallel_tensor->region,
-//                          0 /*projection id*/,
-//                          READ_ONLY,
-//                          EXCLUSIVE,
-//                          full_label->parallel_tensor->region,
-//                          MAP_TO_ZC_MEMORY));
-//    launcher.add_field(0, FID_DATA);
-//    launcher.add_region_requirement(
-//        RegionRequirement(batch_label->parallel_tensor->part,
-//                          0 /*projection id*/,
-//                          WRITE_ONLY,
-//                          EXCLUSIVE,
-//                          batch_label->parallel_tensor->region));
-//    launcher.add_field(1, FID_DATA);
-//    runtime->execute_index_space(ctx, launcher);
-//  }
-//  // progress next_index
-//  next_index += ff.config.batchSize;
+  //  Context ctx = ff.config.lg_ctx;
+  //  Runtime *runtime = ff.config.lg_hlr;
+  //
+  //  // Load Text Input
+  //  {
+  //    Domain domain = runtime->get_index_space_domain(
+  //        ctx, batch_text_input->parallel_tensor->parallel_is);
+  //    ArgumentMap argmap;
+  //    int idx = next_index;
+  //    for (Domain::DomainPointIterator it(domain); it; it++) {
+  //      SampleIdxs meta;
+  //      assert(ff.config.batchSize %
+  //      batch_input->parallel_tensor->dims[2].size ==
+  //             0);
+  //      meta.num_samples =
+  //          ff.config.batchSize / batch_input->parallel_tensor->dims[2].size;
+  //      for (int i = 0; i < meta.num_samples; i++)
+  //        meta.idxs[i] = idx++;
+  //      argmap.set_point(*it, TaskArgument(&meta, sizeof(SampleIdxs)));
+  //    }
+  //    IndexLauncher launcher(CUSTOM_GPU_TASK_ID_2,
+  //                           batch_input->parallel_tensor->parallel_is,
+  //                           TaskArgument(NULL, 0),
+  //                           argmap,
+  //                           Predicate::TRUE_PRED,
+  //                           false /*must*/,
+  //                           0 /*mapper_id*/,
+  //                           batch_input->parallel_tensor->machine_view.hash());
+  //    // Full dataset in ZCM
+  //    launcher.add_region_requirement(
+  //        RegionRequirement(full_input->parallel_tensor->region,
+  //                          0 /*projection id*/,
+  //                          READ_ONLY,
+  //                          EXCLUSIVE,
+  //                          full_input->parallel_tensor->region,
+  //                          MAP_TO_ZC_MEMORY));
+  //    launcher.add_field(0, FID_DATA);
+  //    launcher.add_region_requirement(
+  //        RegionRequirement(batch_input->parallel_tensor->part,
+  //                          0 /*projection id*/,
+  //                          WRITE_ONLY,
+  //                          EXCLUSIVE,
+  //                          batch_input->parallel_tensor->region));
+  //    launcher.add_field(1, FID_DATA);
+  //    runtime->execute_index_space(ctx, launcher);
+  //  }
+  //  // Load Visual Input
+  //  {
+  //    Domain domain = runtime->get_index_space_domain(
+  //        ctx, batch_input->parallel_tensor->parallel_is);
+  //    ArgumentMap argmap;
+  //    int idx = next_index;
+  //    for (Domain::DomainPointIterator it(domain); it; it++) {
+  //      SampleIdxs meta;
+  //      assert(ff.config.batchSize %
+  //      batch_input->parallel_tensor->dims[2].size ==
+  //             0);
+  //      meta.num_samples =
+  //          ff.config.batchSize / batch_input->parallel_tensor->dims[2].size;
+  //      for (int i = 0; i < meta.num_samples; i++)
+  //        meta.idxs[i] = idx++;
+  //      argmap.set_point(*it, TaskArgument(&meta, sizeof(SampleIdxs)));
+  //    }
+  ///    IndexLauncher launcher(CUSTOM_GPU_TASK_ID_2,
+  //                           batch_input->parallel_tensor->parallel_is,
+  //                           TaskArgument(NULL, 0),
+  //                           argmap,
+  //                           Predicate::TRUE_PRED,
+  //                           false /*must*/,
+  //                           0 /*mapper_id*/,
+  //                           batch_input->parallel_tensor->machine_view.hash());
+  //    // Full dataset in ZCM
+  //    launcher.add_region_requirement(
+  //        RegionRequirement(full_input->parallel_tensor->region,
+  //                          0 /*projection id*/,
+  //                          READ_ONLY,
+  //                          EXCLUSIVE,
+  //                          full_input->parallel_tensor->region,
+  //                          MAP_TO_ZC_MEMORY));
+  //    launcher.add_field(0, FID_DATA);
+  //    launcher.add_region_requirement(
+  //        RegionRequirement(batch_input->parallel_tensor->part,
+  //                          0 /*projection id*/,
+  //                          WRITE_ONLY,
+  //                          EXCLUSIVE,
+  //                          batch_input->parallel_tensor->region));
+  //    launcher.add_field(1, FID_DATA);
+  //    runtime->execute_index_space(ctx, launcher);
+  //  }
+  //  // Load Labels
+  //  {
+  //    Domain domain = runtime->get_index_space_domain(
+  //        ctx, batch_label->parallel_tensor->parallel_is);
+  //    ArgumentMap argmap;
+  //    int idx = next_index;
+  //    for (Domain::DomainPointIterator it(domain); it; it++) {
+  //      SampleIdxs meta;
+  //      assert(ff.config.batchSize %
+  //      batch_label->parallel_tensor->dims[2].size ==
+  //             0);
+  //      meta.num_samples =
+  //          ff.config.batchSize / batch_label->parallel_tensor->dims[2].size;
+  //      for (int i = 0; i < meta.num_samples; i++)
+  //        meta.idxs[i] = idx++;
+  //      argmap.set_point(*it, TaskArgument(&meta, sizeof(SampleIdxs)));
+  //    }
+  //    IndexLauncher launcher(CUSTOM_GPU_TASK_ID_2,
+  //                           batch_label->parallel_tensor->parallel_is,
+  //                           TaskArgument(NULL, 0),
+  //                           argmap,
+  //                           Predicate::TRUE_PRED,
+  //                           false /*must*/,
+  //                           0 /*mapper_id*/,
+  //                           batch_label->parallel_tensor->machine_view.hash());
+  //    // Full dataset in ZCM
+  //    launcher.add_region_requirement(
+  //        RegionRequirement(full_label->parallel_tensor->region,
+  //                          0 /*projection id*/,
+  //                          READ_ONLY,
+  //                          EXCLUSIVE,
+  //                          full_label->parallel_tensor->region,
+  //                          MAP_TO_ZC_MEMORY));
+  //    launcher.add_field(0, FID_DATA);
+  //    launcher.add_region_requirement(
+  //        RegionRequirement(batch_label->parallel_tensor->part,
+  //                          0 /*projection id*/,
+  //                          WRITE_ONLY,
+  //                          EXCLUSIVE,
+  //                          batch_label->parallel_tensor->region));
+  //    launcher.add_field(1, FID_DATA);
+  //    runtime->execute_index_space(ctx, launcher);
+  //  }
+  //  // progress next_index
+  //  next_index += ff.config.batchSize;
 }
 
 void DataLoader::reset() {

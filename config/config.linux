@@ -17,16 +17,17 @@ CXX=mpic++
 #INSTALL_DIR=
 
 # set build type
+#BUILD_TYPE=Debug
 BUILD_TYPE=Release
 
 # set CUDA Arch, replace xx with your GPU architecture
 #FF_CUDA_ARCH=xx
 
 # set CUDNN dir in case cmake cannot autodetect a path
-CUDNN_DIR=/usr/local/cuda-11.7
+CUDNN_DIR=/sw/summit/cuda/11.5.2
 
 # set CUDA dir in case cmake cannot autodetect a path
-CUDA_DIR=/usr/local/cuda-11.7
+CUDA_DIR=/sw/summit/cuda/11.5.2
 
 # enable Python
 FF_USE_PYTHON=OFF

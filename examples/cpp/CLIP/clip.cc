@@ -185,12 +185,12 @@ void FlexFlow::top_level_task(Task const *task,
     future.get_void_result();
   }
   
-  int m_iterations = 5;
+  int m_iterations = 10;
 
   log_app.print("Warmup finished...Start timer...");
+  printf("parameters.size() = %lu\n", ff.parameters.size());
   log_app.print("Num. epochs = %d", ffConfig.epochs);
   log_app.print("Num. iterations/epoch = %d", m_iterations);
-  printf("parameters.size() = %lu\n", ff.parameters.size());
   double ts_start = Realm::Clock::current_time_in_microseconds();
   for (int epoch = 0; epoch < ffConfig.epochs; epoch++) {
     // ff.reset_metrics();
@@ -218,9 +218,12 @@ void FlexFlow::top_level_task(Task const *task,
   }
   double ts_end = Realm::Clock::current_time_in_microseconds();
   double run_time = 1e-6 * (ts_end - ts_start);
-  printf("ELAPSED TIME = %.4fs, THROUGHPUT = %.2f samples/s\n",
+  printf("ELAPSED TIME = %.4fs\nTHROUGHPUT = %.2f samples/s\n",
          run_time,
          m_iterations * ffConfig.batchSize * ffConfig.epochs / run_time);
+  printf("GFLOPS = %.2f gflops\n", 1e-9 * ffConfig.batchSize * tfConfig.sequence_length * (tfConfig.num_branches * tfConfig.tt_num_layers) * 
+        (3 * (8 * pow(tfConfig.tt_hidden_size/tfConfig.tt_num_heads, 2) + 4 * tfConfig.sequence_length * (tfConfig.tt_hidden_size/tfConfig.tt_num_heads) + 4 * pow(tfConfig.tt_hidden_size,2))) / run_time);
+
 }
 
 void parse_input_args(char **argv, int argc, CLIPConfig &config) {

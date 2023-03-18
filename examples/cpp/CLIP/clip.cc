@@ -129,11 +129,14 @@ void FlexFlow::top_level_task(Task const *task,
   }
   Tensor output = ff.concat(tfConfig.num_branches, encoded_inputs, -1 /*axis*/);
 
+  std::cerr << "Model is defined" << std::endl;
+
   Optimizer *optimizer = new SGDOptimizer(&ff, 0.01f);
   std::vector<MetricsType> metrics;
   // metrics.push_back(METRICS_ACCURACY);
 //   metrics.push_back(METRICS_MEAN_SQUARED_ERROR);
 
+  std::cerr << "Let's compile FF" << std::endl;
   /// @warning: Code exits when we compile the model if we turn on op profiling
   ff.compile(optimizer, LOSS_MEAN_SQUARED_ERROR_AVG_REDUCE, metrics);
 

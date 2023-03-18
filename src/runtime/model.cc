@@ -3983,6 +3983,7 @@ void FFConfig::parse_args(char **argv, int argc) {
     }
     if (!strcmp(argv[i], "--machine-model-version")) {
       machine_model_version = atoi(argv[++i]);
+      std::cerr << "mm version: " << machine_model_version << std::endl;
       continue;
     }
     if (!strcmp(argv[i], "--machine-model-file")) {

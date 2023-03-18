@@ -1,4 +1,5 @@
 #include "flexflow/machine_view.h"
+#include "flexflow/utils/hash_utils.h"
 
 namespace FlexFlow {
 
@@ -46,6 +47,20 @@ size_t MachineView::num_parts() const {
   return parts;
 }
 
+
+size_t MachineView::hash() const {
+  size_t ret = 1;
+  hash_combine(ret, device_type);
+  hash_combine(ret, ndims);
+  hash_combine(ret, start_device_id);
+  for (int i = 0; i < ndims; i++) {
+    hash_combine(ret, dim[i]);
+    hash_combine(ret, stride[i]);
+  }
+  return ret;
+}
+
+/*
 size_t MachineView::hash() const {
   size_t ret = 17;
   ret = ret * 31 + std::hash<int>()(device_type);
@@ -57,6 +72,7 @@ size_t MachineView::hash() const {
   }
   return ret;
 }
+*/
 
 int MachineView::get_device_id(DomainPoint const &p) const {
   assert(p.get_dim() == ndims);

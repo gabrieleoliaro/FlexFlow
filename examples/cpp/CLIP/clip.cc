@@ -137,15 +137,18 @@ void FlexFlow::top_level_task(Task const *task,
 //   metrics.push_back(METRICS_MEAN_SQUARED_ERROR);
 
   std::cerr << "Let's compile FF" << std::endl;
+  clock_t st = clock();
   /// @warning: Code exits when we compile the model if we turn on op profiling
   ff.compile(optimizer, LOSS_MEAN_SQUARED_ERROR_AVG_REDUCE, metrics);
-
+  std::cerr << "Time for compilation : " << (float)(clock() - st)/CLOCKS_PER_SEC << " sec" << std::endl;
 
 //  std::cout << "Code reaches here after compilation" << std::endl;
   // Data Loader
 //   DataLoader loader(ff, tfConfig, text_input, visual_input, ff.label_tensor, ot);
 //   loader.next_batch(ff);
 //   loader.reset();
+  
+  st = clock();
   ff.init_operators();
   ff.zero_weight_gradients();
 
@@ -160,7 +163,9 @@ void FlexFlow::top_level_task(Task const *task,
     ff.update();
     ff.zero_weight_gradients();
   }
+  std::cerr << "Time for first warm-up: " << (float)(clock() - st)/CLOCKS_PER_SEC << " sec" << std::endl;
 
+  st = clock();
   // Legion dyanmic tracing for better scheduling
   for (int iter = 0; iter < 1; iter++) {
       ff.reset_pipe_idx();
@@ -173,13 +178,15 @@ void FlexFlow::top_level_task(Task const *task,
         //runtime->end_trace(ctx,111);
       }
       ff.update();
-      ff.zero_weight_gradients();
+      //ff.zero_weight_gradients();
       runtime->end_trace(ctx, 111); /// 111: trace_id
   } 
+  std::cerr << "Time for warm-up with tracing : " << (float)(clock() - st)/CLOCKS_PER_SEC << " sec" << std::endl;
   
   
   // printf("================= NO WARMUP ITERATION - needs to be reverted for throughput measurement");
 
+  st = clock();
   // Start timer
   {
     runtime->issue_execution_fence(ctx);
@@ -208,7 +215,7 @@ void FlexFlow::top_level_task(Task const *task,
         // runtime->end_trace(ctx, 111 /*trace_id*/);
       }
       ff.update();
-      ff.zero_weight_gradients();
+      //ff.zero_weight_gradients();
       runtime->end_trace(ctx, 111 /*trace_id*/);
     }
   }
@@ -219,6 +226,8 @@ void FlexFlow::top_level_task(Task const *task,
     Future future = runtime->issue_timing_measurement(ctx, timer);
     future.get_void_result();
   }
+  std::cerr << "Time for measurement (# iter : " << m_iterations << "): " << (float)(clock() - st)/CLOCKS_PER_SEC << " sec" << std::endl;
+
   double ts_end = Realm::Clock::current_time_in_microseconds();
   double run_time = 1e-6 * (ts_end - ts_start);
   printf("ELAPSED TIME = %.4fs\nTHROUGHPUT = %.2f samples/s\n",

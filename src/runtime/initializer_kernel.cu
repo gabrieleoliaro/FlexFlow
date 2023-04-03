@@ -141,7 +141,7 @@ void GlorotUniform::init_task(Task const *task,
 
   GlorotUniform *initializer = (GlorotUniform *)task->args;
   curandSetPseudoRandomGeneratorSeed(gen, initializer->seed);
-  fprintf(stderr, "seed = %d scale = %.4lf\n", initializer->seed, gu->scale);
+  // fprintf(stderr, "seed = %d scale = %.4lf\n", initializer->seed, gu->scale);
   checkCUDA(curandGenerateUniform(gen, w, domain.get_volume()));
   scale_kernel<<<GET_BLOCKS(domain.get_volume()),
                  CUDA_NUM_THREADS,

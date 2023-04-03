@@ -146,7 +146,7 @@ void GlorotUniform::init_task(Task const *task,
 
   GlorotUniform *initializer = (GlorotUniform *)task->args;
   hiprandSetPseudoRandomGeneratorSeed(gen, initializer->seed);
-  fprintf(stderr, "seed = %d scale = %.4lf\n", initializer->seed, gu->scale);
+  // fprintf(stderr, "seed = %d scale = %.4lf\n", initializer->seed, gu->scale);
   checkCUDA(hiprandGenerateUniform(gen, w, domain.get_volume()));
   hipLaunchKernelGGL(scale_kernel,
                      GET_BLOCKS(domain.get_volume()),

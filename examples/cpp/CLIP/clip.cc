@@ -136,7 +136,7 @@ void FlexFlow::top_level_task(Task const *task,
   // metrics.push_back(METRICS_ACCURACY);
 //   metrics.push_back(METRICS_MEAN_SQUARED_ERROR);
 
-  std::cerr << "Let's compile FF" << std::endl;
+  std::cerr << "[FF] Start compilation " << std::endl;
   clock_t st = clock();
   /// @warning: Code exits when we compile the model if we turn on op profiling
   ff.compile(optimizer, LOSS_MEAN_SQUARED_ERROR_AVG_REDUCE, metrics);
@@ -157,11 +157,11 @@ void FlexFlow::top_level_task(Task const *task,
     ff.reset_pipe_idx();
     for (int iter_inner = 0; iter_inner < ff.iter_perbatch; iter_inner++) {
       ff.forward();
-      ff.zero_input_gradients();
+//      ff.zero_input_gradients();
       ff.backward();
     }
     ff.update();
-    ff.zero_weight_gradients();
+  //  ff.zero_weight_gradients();
   }
   std::cerr << "Time for first warm-up: " << (float)(clock() - st)/CLOCKS_PER_SEC << " sec" << std::endl;
 
@@ -233,8 +233,8 @@ void FlexFlow::top_level_task(Task const *task,
   printf("ELAPSED TIME = %.4fs\nTHROUGHPUT = %.2f samples/s\n",
          run_time,
          m_iterations * ffConfig.batchSize * ffConfig.epochs / run_time);
-  printf("GFLOPS = %.2f gflops\n", 1e-9 * ffConfig.batchSize * tfConfig.sequence_length * (tfConfig.num_branches * tfConfig.tt_num_layers) * 
-        (3 * (8 * pow(tfConfig.tt_hidden_size/tfConfig.tt_num_heads, 2) + 4 * tfConfig.sequence_length * (tfConfig.tt_hidden_size/tfConfig.tt_num_heads) + 4 * pow(tfConfig.tt_hidden_size,2))) / run_time);
+//  printf("GFLOPS = %.2f gflops\n", 1e-9 * ffConfig.batchSize * tfConfig.sequence_length * (tfConfig.num_branches * tfConfig.tt_num_layers) *
+//        (3 * (8 * pow(tfConfig.tt_hidden_size/tfConfig.tt_num_heads, 2) + 4 * tfConfig.sequence_length * (tfConfig.tt_hidden_size/tfConfig.tt_num_heads) + 4 * pow(tfConfig.tt_hidden_size,2))) / run_time);
 
 }
 

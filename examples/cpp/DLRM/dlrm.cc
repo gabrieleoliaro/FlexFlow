@@ -80,17 +80,15 @@ Tensor create_emb(FFModel *model,
 }
 
 Tensor interact_features(FFModel *model,
-                         Tensor const &x,
                          std::vector<Tensor> const &ly,
                          std::string interaction) {
   // Currently only support cat
   // TODO: implement dot attention
   if (interaction == "cat") {
-    Tensor *inputs = (Tensor *)malloc(sizeof(Tensor) * (1 + ly.size()));
-    inputs[0] = x;
+    Tensor *inputs = (Tensor *)malloc(sizeof(Tensor) * ly.size());
     for (size_t i = 0; i < ly.size(); i++)
-      inputs[i + 1] = ly[i];
-    return model->concat(ly.size() + 1, inputs, -1 /*axis*/);
+      inputs[i] = ly[i];
+    return model->concat(ly.size(), inputs, -1 /*axis*/);
     free(inputs);
   } else {
     assert(false);
@@ -131,46 +129,64 @@ void FlexFlow::top_level_task(Task const *task,
   FFModel ff(ffConfig);
 
   std::vector<Tensor> sparse_inputs;
+  std::vector<Tensor> dense_inputs;
+  int n_dense_layers = 7;
+
+  /// @warning: # of dense inputs should be equal to # of sparse inputs
+  /// This is to achieve the balance between dense / sparse layers
+  assert(dlrmConfig.embedding_size.size() == n_dense_layers);
+
+  /// GOAL: iterate one dense and sparse branch to make it easier for our optimizer
+  /// @warning Make sure that IDs are in topological order.
+  std::vector<Tensor> layers;
   for (size_t i = 0; i < dlrmConfig.embedding_size.size(); i++) {
     int const dims[] = {ffConfig.ubatchUnit, dlrmConfig.embedding_bag_size};
-    Tensor input = ff.create_tensor<2>(dims, DT_INT64);
-    sparse_inputs.push_back(input);
+    Tensor sparse_input = ff.create_tensor<2>(dims, DT_INT64);
+    sparse_inputs.push_back(sparse_input);
+    
+    /// sparse layer
+    int input_dim = dlrmConfig.embedding_size[i];
+    int output_dim = dlrmConfig.sparse_feature_size;
+    layers.push_back(create_emb(&ff, sparse_inputs[i], input_dim, output_dim, i));
+    
+    int const dims_dense[] = {ffConfig.ubatchUnit, dlrmConfig.mlp_bot[0]};
+    Tensor dense_input = ff.create_tensor<2>(dims_dense, DT_FLOAT);
+    dense_inputs.push_back(dense_input);
+
+    /// dense layer
+    layers.push_back(create_mlp(&ff, dense_inputs[i], dlrmConfig.mlp_bot, dlrmConfig.sigmoid_bot));
   }
-  Tensor dense_input;
-  {
-    int const dims[] = {ffConfig.ubatchUnit, dlrmConfig.mlp_bot[0]};
-    dense_input = ff.create_tensor<2>(dims, DT_FLOAT);
-  }
+    
   // Tensor label;
   // {
   //  const int dims[] = {ffConfig.batchSize, 1};
   //  label = ff.create_tensor<2>(dims, DT_FLOAT);
   // }
-  // Step 1 create dense_mlp
-  Tensor x =
-      create_mlp(&ff, dense_input, dlrmConfig.mlp_bot, dlrmConfig.sigmoid_bot);
-  std::vector<Tensor> ly;
-  for (size_t i = 0; i < dlrmConfig.embedding_size.size(); i++) {
-    int input_dim = dlrmConfig.embedding_size[i];
-    int output_dim = dlrmConfig.sparse_feature_size;
-    ly.push_back(create_emb(&ff, sparse_inputs[i], input_dim, output_dim, i));
-  }
-  Tensor z = interact_features(&ff, x, ly, dlrmConfig.arch_interaction_op);
-  Tensor p =
-      create_mlp(&ff, z, dlrmConfig.mlp_top, dlrmConfig.mlp_top.size() - 2);
+  
+  Tensor z = interact_features(&ff, layers, dlrmConfig.arch_interaction_op);
+
+  /// top MLP
+  Tensor p = create_mlp(&ff, z, dlrmConfig.mlp_top, dlrmConfig.mlp_top.size() - 2);
   if (dlrmConfig.loss_threshold > 0.0f && dlrmConfig.loss_threshold < 1.0f) {
     // TODO: implement clamp
     assert(false);
   }
+  
   // Use SGD Optimizer
   Optimizer *optimizer = new SGDOptimizer(&ff, 0.01f);
   std::vector<MetricsType> metrics;
   // metrics.push_back(METRICS_ACCURACY);
   // metrics.push_back(METRICS_MEAN_SQUARED_ERROR);
+  
+  std::cerr << "[FF] Start compilation " << std::endl;	
+  clock_t st = clock();
   ff.compile(optimizer, LOSS_MEAN_SQUARED_ERROR_AVG_REDUCE, metrics);
+
   // Data Loader
-  DataLoader data_loader(
-      ff, dlrmConfig, sparse_inputs, dense_input, ff.label_tensor);
+  // DataLoader data_loader(
+  //     ff, dlrmConfig, sparse_inputs, dense_input, ff.label_tensor);
+
+  st = clock();
   ff.init_operators();
   ff.zero_weight_gradients();
   log_app.print("DEBUG: finish op init");
@@ -185,41 +201,39 @@ void FlexFlow::top_level_task(Task const *task,
   //   ff.backward();
   //   ff.update();
   // }
+
+  // Warm-up before Legion dynamic tracing
   for (int iter = 0; iter < 1; iter++) {
-    data_loader.reset();
-    ff.reset_metrics();
     ff.reset_pipe_idx();
-    data_loader.reset_idx();
     for (int iter_inner = 0; iter_inner < ff.iter_perbatch; iter_inner++) {
-      if (dlrmConfig.dataset_path.length() == 0) {
-        // Only load data once for random input
-        for (size_t i = 0; i < data_loader.batch_sparse_inputs.size(); i++) {
-          printf("load sparse input [%ld]\n", i);
-          for (int k = 0; k < data_loader.batch_sparse_inputs[i]
-                                  ->parallel_tensor->owner_op->nFnB;
-               k++) {
-            data_loader.next_sparse_input_ubatch(ff, i);
-          }
-        }
-
-        for (int k = 0;
-             k < data_loader.batch_dense_input->parallel_tensor->owner_op->nFnB;
-             k++) {
-          data_loader.next_dense_input_ubatch(ff);
-        }
-
-        for (int i = 0; i < ff.get_final_operator()->nFnB; i++) {
-          data_loader.next_label_ubatch(ff);
-        }
-      }
       ff.forward();
-      ff.zero_input_gradients();
+//      ff.zero_input_gradients();
       ff.backward();
     }
     ff.update();
-    ff.zero_weight_gradients();
+  //  ff.zero_weight_gradients();
   }
+  std::cerr << "Time for first warm-up: " << (float)(clock() - st)/CLOCKS_PER_SEC << " sec" << std::endl;
 
+  st = clock();
+  // Legion dyanmic tracing for better scheduling
+  for (int iter = 0; iter < 1; iter++) {
+      ff.reset_pipe_idx();
+      runtime->begin_trace(ctx, 111); // 111: trace_id
+      for (int iter_inner = 0; iter_inner < ff.iter_perbatch; iter_inner++) {
+        //runtime->begin_trace(ctx, 111);
+        ff.forward();
+        // ff.zero_input_gradients();
+        ff.backward();
+        //runtime->end_trace(ctx,111);
+      }
+      ff.update();
+      //ff.zero_weight_gradients();
+      runtime->end_trace(ctx, 111); /// 111: trace_id
+  } 
+  std::cerr << "Time for warm-up with tracing : " << (float)(clock() - st)/CLOCKS_PER_SEC << " sec" << std::endl;
+  
+  st = clock();
   // Start timer
   {
     runtime->issue_execution_fence(ctx);
@@ -227,75 +241,28 @@ void FlexFlow::top_level_task(Task const *task,
     Future future = runtime->issue_timing_measurement(ctx, timer);
     future.get_void_result();
   }
+  
+  int m_iterations = 30;
+
   log_app.print("Warmup finished...Start timer...");
-  log_app.print("Num. epochs = %d", ffConfig.epochs);
-  log_app.print("Num. iterations/epoch = %d",
-                data_loader.num_samples / ffConfig.batchSize);
   printf("parameters.size() = %lu\n", ff.parameters.size());
+  log_app.print("Num. epochs = %d", ffConfig.epochs);
+  log_app.print("Num. iterations/epoch = %d", m_iterations);
   double ts_start = Realm::Clock::current_time_in_microseconds();
   for (int epoch = 0; epoch < ffConfig.epochs; epoch++) {
-    // data_loader.reset();
-    ff.reset_metrics();
-    int iterations = data_loader.num_samples / ffConfig.batchSize;
-    for (int iter = 0; iter < iterations; iter++) {
+    // ff.reset_metrics();
+    for (int iter = 0; iter < m_iterations; iter++) {
       ff.reset_pipe_idx();
-      // data_loader.reset_idx();
       runtime->begin_trace(ctx, 111 /*trace_id*/);
       for (int iter_inner = 0; iter_inner < ff.iter_perbatch; iter_inner++) {
-        if (dlrmConfig.dataset_path.length() == 2) {
-          // Only load data once for random input
-          for (size_t i = 0; i < data_loader.batch_sparse_inputs.size(); i++) {
-            printf("load sparse input [%ld]\n", i);
-            for (int k = 0; k < data_loader.batch_sparse_inputs[i]
-                                    ->parallel_tensor->owner_op->nFnB;
-                 k++) {
-              data_loader.next_sparse_input_ubatch(ff, i);
-            }
-          }
-
-          for (int k = 0;
-               k <
-               data_loader.batch_dense_input->parallel_tensor->owner_op->nFnB;
-               k++) {
-            data_loader.next_dense_input_ubatch(ff);
-          }
-
-          for (int i = 0; i < ff.get_final_operator()->nFnB; i++) {
-            data_loader.next_label_ubatch(ff);
-          }
-        } else if (dlrmConfig.dataset_path.length() != 0) {
-          // shicao pipeline
-          for (size_t i = 0; i < data_loader.batch_sparse_inputs.size(); i++) {
-            for (int k = 0; k < data_loader.batch_sparse_inputs[i]
-                                    ->parallel_tensor->owner_op->nFnB;
-                 k++) {
-              data_loader.next_sparse_input_ubatch(ff, i);
-            }
-          }
-
-          for (int k = 0;
-               k <
-               data_loader.batch_dense_input->parallel_tensor->owner_op->nFnB;
-               k++) {
-            data_loader.next_dense_input_ubatch(ff);
-          }
-
-          for (int i = 0; i < ff.get_final_operator()->nFnB; i++) {
-            data_loader.next_label_ubatch(ff);
-          }
-        }
-        // log_app.print("DEBUG: forward...");
+        // runtime->begin_trace(ctx, 111 /*trace_id*/);
         ff.forward();
-        // log_app.print("DEBUG: zero input gradients...");
         // ff.zero_input_gradients();
-        // log_app.print("DEBUG: backward...");
         ff.backward();
+        // runtime->end_trace(ctx, 111 /*trace_id*/);
       }
-      // log_app.print("DEBUG:update weight");
       ff.update();
-      // log_app.print("DEBUG:zero weight gradients");
-      ff.zero_weight_gradients();
-      // log_app.print("DEBUG:finish zero weight gradients");
+      //ff.zero_weight_gradients();
       runtime->end_trace(ctx, 111 /*trace_id*/);
     }
   }
@@ -306,11 +273,15 @@ void FlexFlow::top_level_task(Task const *task,
     Future future = runtime->issue_timing_measurement(ctx, timer);
     future.get_void_result();
   }
+  std::cerr << "Time for measurement (# iter : " << m_iterations << "): " << (float)(clock() - st)/CLOCKS_PER_SEC << " sec" << std::endl;
+
   double ts_end = Realm::Clock::current_time_in_microseconds();
   double run_time = 1e-6 * (ts_end - ts_start);
-  printf("ELAPSED TIME = %.4fs, THROUGHPUT = %.2f samples/s\n",
+  printf("ELAPSED TIME = %.4fs\nTHROUGHPUT = %.2f samples/s\n",
          run_time,
-         data_loader.num_samples * ffConfig.epochs / run_time);
+         m_iterations * ffConfig.batchSize * ffConfig.epochs / run_time);
+
+  
 }
 
 void parse_input_args(char **argv, int argc, DLRMConfig &config) {

@@ -1766,6 +1766,7 @@ GraphOptimalViewSerialized
                    optimal_partition[srcNode].sid !=
                        sinfo[model->config.partition[num - 1]].sid) {
           stage_to_op[optimal_partition[srcNode].sid] = srcOp;
+          // std::cerr << "Register stage " << optimal_partition[srcNode].sid << " to stage_to_op with op " << srcOp->op_guid << std::endl;
         }
 
         graph->add_edge(srcNode, dstNode, dstOp->inputs[j]->owner_idx, j);
@@ -1776,8 +1777,10 @@ GraphOptimalViewSerialized
     if (model->config.sequential_pipeline) {
       for (int i = 0; i < num_stages - 1; i++) {
         printf("stage[%d] dep %s\n", i, stage_dep[i] ? "true" : "false");
+        // std::cerr << "Stage, dep : " << i << " , " << stage_dep[i]  << std::endl;
         if (!stage_dep[i]) {
           FlexFlow::Op const *src_op = stage_to_op[i];
+          // std::cerr << "Src op: " << src_op->op_guid << std::endl;
           std::vector<int> splits;
           splits.push_back(src_op->outputs[0]->dims[0].size);
           Node dummy_node =
@@ -1788,6 +1791,7 @@ GraphOptimalViewSerialized
           optimal_views[dummy_node] = data_parallel_view[i + 1];
           optimal_partition[dummy_node] = sinfo[i + 1];
           printf("adding dummy_node for stage%d\n", i);
+          // std::cerr << "Adding dummy node for stage  " << i << std::endl;
         }
       }
     }
